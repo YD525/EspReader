@@ -131,6 +131,7 @@
     <ClCompile Include="miniz.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="EspRecord.h" />
     <ClInclude Include="miniz.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

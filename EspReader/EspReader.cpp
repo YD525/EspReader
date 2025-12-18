@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stack>
 #include "miniz.h"
+#include "EspRecord.h"
 
 #pragma pack(push, 1)
 struct RecordHeader {
@@ -44,144 +45,258 @@ inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out
 inline bool IsGRUP(const char sig[4]) { return std::memcmp(sig, "GRUP", 4) == 0; }
 bool IsCompressed(const RecordHeader& hdr) { return (hdr.flags & RECORD_FLAG_COMPRESSED) != 0; }
 
+// Decompress
 bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out, size_t uncompressedSize)
 {
     out.resize(uncompressedSize);
     size_t ret = tinfl_decompress_mem_to_mem(out.data(), uncompressedSize, src, srcSize, TINFL_FLAG_PARSE_ZLIB_HEADER);
-    if (ret != uncompressedSize) {
-        std::cerr << "Decompression failed, expected size: " << uncompressedSize << ", got: " << ret << "\n";
-        return false;
-    }
-    return true;
+    return ret == uncompressedSize;
 }
 
 // Parse subrecords from memory buffer
-void ParseSubRecords(const uint8_t* data, size_t dataSize)
+void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec)
 {
     size_t offset = 0;
     while (offset + sizeof(SubRecordHeader) <= dataSize) {
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
-        std::string name(sub->sig, 4);
-        if (sub->size == 0 || offset + sizeof(SubRecordHeader) + sub->size > dataSize) break;
-        std::cout << "  Sub: " << name << " Size=" << sub->size << "\n";
+        if (offset + sizeof(SubRecordHeader) + sub->size > dataSize) break;
+        rec.AddSubRecord(sub->sig, data + offset + sizeof(SubRecordHeader), sub->size);
         offset += sizeof(SubRecordHeader) + sub->size;
     }
 }
 
-// Parse subrecords directly from stream
-void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize)
+// Parse subrecords from stream
+void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec)
 {
     uint32_t bytesRead = 0;
-    while (bytesRead + sizeof(SubRecordHeader) <= recordSize && f.good()) {
-        SubRecordHeader sub{};
-        if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
-        if (sub.size == 0 || bytesRead + sizeof(SubRecordHeader) + sub.size > recordSize) {
-            std::cerr << "Invalid subrecord size, skipping rest of record\n";
-            f.seekg(recordSize - bytesRead - sizeof(SubRecordHeader), std::ios::cur);
+    while (bytesRead < recordSize && f.good()) {
+        if (bytesRead + sizeof(SubRecordHeader) > recordSize) {
+            f.seekg(recordSize - bytesRead, std::ios::cur);
             break;
         }
-        std::string subName(sub.sig, 4);
-        std::cout << "  Sub: " << subName << " Size=" << sub.size << "\n";
-        if (sub.size > 0) f.seekg(sub.size, std::ios::cur);
-        bytesRead += sizeof(SubRecordHeader) + sub.size;
+
+        SubRecordHeader sub{};
+        if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
+        bytesRead += sizeof(SubRecordHeader);
+
+        if (bytesRead + sub.size > recordSize) {
+            f.seekg(recordSize - bytesRead, std::ios::cur);
+            break;
+        }
+
+        std::vector<uint8_t> buf(sub.size);
+        if (sub.size > 0) {
+            f.read(reinterpret_cast<char*>(buf.data()), sub.size);
+            bytesRead += sub.size;
+        }
+        rec.AddSubRecord(sub.sig, buf.data(), sub.size);
     }
 }
 
 // Parse a single record
-void ParseRecord(std::ifstream& f, const char sig[4])
+void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc)
 {
     RecordHeader hdr{};
     std::memcpy(hdr.sig, sig, 4);
-    Read(f, hdr.dataSize); Read(f, hdr.flags); Read(f, hdr.formID);
-    Read(f, hdr.versionCtrl); Read(f, hdr.version); Read(f, hdr.unknown);
+    Read(f, hdr.dataSize);
+    Read(f, hdr.flags);
+    Read(f, hdr.formID);
+    Read(f, hdr.versionCtrl);
+    Read(f, hdr.version);
+    Read(f, hdr.unknown);
 
-    std::string name(hdr.sig, 4);
-    std::cout << "Record: " << name
-        << " Size=" << hdr.dataSize
-        << " FormID=0x" << std::hex << hdr.formID << std::dec << "\n";
+    EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
 
     if (IsCompressed(hdr)) {
-        if (hdr.dataSize < 4) { f.seekg(hdr.dataSize, std::ios::cur); return; }
-        uint32_t uncompressedSize{};
+        if (hdr.dataSize < 4) {
+            f.seekg(hdr.dataSize, std::ios::cur);
+            doc.AddRecord(std::move(rec));
+            return;
+        }
+
+        uint32_t uncompressedSize = 0;
         Read(f, uncompressedSize);
+
         uint32_t compressedSize = hdr.dataSize - 4;
-        if (compressedSize == 0) return;
         std::vector<uint8_t> compressed(compressedSize);
         f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
+
         std::vector<uint8_t> decompressed;
         if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-            ParseSubRecords(decompressed.data(), decompressed.size());
-        else
-            std::cerr << "Zlib decompress failed for record " << name << "\n";
-        return;
+            ParseSubRecords(decompressed.data(), decompressed.size(), rec);
+    }
+    else {
+        ParseSubRecordsStream(f, hdr.dataSize, rec);
     }
 
-    ParseSubRecordsStream(f, hdr.dataSize);
+    doc.AddRecord(std::move(rec));
 }
 
-// Iterative group parsing using a stack
-void ParseGroupIterative(std::ifstream& f)
+// Iterative group parsing
+void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
 {
-    struct GroupState { std::streampos startPos; uint32_t remaining; };
-
+    struct GroupState {
+        uint32_t remaining;
+    };
     std::stack<GroupState> groupStack;
 
-    // Read first group header
-    GroupHeader gh;
-    Read(f, gh.size); f.read(gh.label, 4); Read(f, gh.groupType); Read(f, gh.stamp); Read(f, gh.unknown);
-    std::cout << "Group: " << std::string(gh.label, 4)
-        << " Size=" << gh.size
-        << " Type=" << gh.groupType << "\n";
+    // Read rest of GRUP header (sig already read)
+    GroupHeader gh{};
+    std::memcpy(gh.sig, "GRUP", 4);
+    Read(f, gh.size);
+    f.read(gh.label, 4);
+    Read(f, gh.groupType);
+    Read(f, gh.stamp);
+    Read(f, gh.unknown);
 
-    groupStack.push({ f.tellg(), gh.size - 24 }); // subtract header after sig
+    if (gh.size < 24) return;
+
+    groupStack.push({ gh.size - 24 });
 
     while (!groupStack.empty()) {
         auto& state = groupStack.top();
-        if (state.remaining == 0) { groupStack.pop(); continue; }
+
+        if (state.remaining == 0) {
+            groupStack.pop();
+            continue;
+        }
+
+        if (state.remaining < 4) {
+            f.seekg(state.remaining, std::ios::cur);
+            groupStack.pop();
+            continue;
+        }
 
         char sig[4];
-        if (!f.read(sig, 4)) { groupStack.pop(); continue; }
+        if (!f.read(sig, 4)) {
+            groupStack.pop();
+            continue;
+        }
 
-        uint32_t consumed = 4;
         if (IsGRUP(sig)) {
-            // New group
-            Read(f, gh.size); f.read(gh.label, 4); Read(f, gh.groupType); Read(f, gh.stamp); Read(f, gh.unknown);
-            std::cout << "Group: " << std::string(gh.label, 4)
-                << " Size=" << gh.size
-                << " Type=" << gh.groupType << "\n";
-            consumed += 24;
-            groupStack.push({ f.tellg(), gh.size - 24 });
+            if (state.remaining < 24) {
+                f.seekg(state.remaining - 4, std::ios::cur);
+                groupStack.pop();
+                continue;
+            }
+
+            // Read rest of nested GRUP header
+            Read(f, gh.size);
+            f.read(gh.label, 4);
+            Read(f, gh.groupType);
+            Read(f, gh.stamp);
+            Read(f, gh.unknown);
+
+            if (gh.size < 24 || gh.size > state.remaining) {
+                groupStack.pop();
+                continue;
+            }
+
+            state.remaining -= gh.size;
+            groupStack.push({ gh.size - 24 });
         }
         else {
-            // Record
-            ParseRecord(f, sig);
-            consumed += 0; // record size consumed is managed inside ParseRecord
-        }
+            if (state.remaining < 24) {
+                f.seekg(state.remaining - 4, std::ios::cur);
+                groupStack.pop();
+                continue;
+            }
 
-        state.remaining -= consumed;
+            // Parse record header to get size
+            RecordHeader hdr{};
+            std::memcpy(hdr.sig, sig, 4);
+            Read(f, hdr.dataSize);
+            Read(f, hdr.flags);
+            Read(f, hdr.formID);
+            Read(f, hdr.versionCtrl);
+            Read(f, hdr.version);
+            Read(f, hdr.unknown);
+
+            uint32_t recordTotalSize = 24 + hdr.dataSize;
+
+            if (recordTotalSize > state.remaining) {
+                groupStack.pop();
+                continue;
+            }
+
+            // Now parse the record data
+            EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
+
+            if (IsCompressed(hdr)) {
+                if (hdr.dataSize < 4) {
+                    f.seekg(hdr.dataSize, std::ios::cur);
+                }
+                else {
+                    uint32_t uncompressedSize = 0;
+                    Read(f, uncompressedSize);
+
+                    uint32_t compressedSize = hdr.dataSize - 4;
+                    std::vector<uint8_t> compressed(compressedSize);
+                    f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
+
+                    std::vector<uint8_t> decompressed;
+                    if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
+                        ParseSubRecords(decompressed.data(), decompressed.size(), rec);
+                }
+            }
+            else {
+                ParseSubRecordsStream(f, hdr.dataSize, rec);
+            }
+
+            doc.AddRecord(std::move(rec));
+            state.remaining -= recordTotalSize;
+        }
     }
 }
 
-int ReadEsp(char* EspPath, bool EnableLog)
+// Read ESP
+int ReadEsp(const char* EspPath, EspDocument& doc)
 {
     std::ifstream f(EspPath, std::ios::binary);
-    if (!f.is_open()) { if (EnableLog) std::cerr << "Failed to open esp file: " << EspPath << "\n"; return 1; }
-    if (EnableLog) std::cout << "Reading ESP: " << EspPath << "\n";
+    if (!f.is_open()) {
+        std::cerr << "Failed to open ESP: " << EspPath << "\n";
+        return 1;
+    }
 
-    while (f.good()) {
+    while (f.good() && f.peek() != EOF) {
         char sig[4];
         if (!f.read(sig, 4)) break;
-        if (IsGRUP(sig)) ParseGroupIterative(f);
-        else ParseRecord(f, sig);
+
+        if (IsGRUP(sig)) {
+            ParseGroupIterative(f, doc);
+        }
+        else {
+            ParseRecord(f, sig, doc);
+        }
     }
     return 0;
 }
 
 int main()
 {
-    const char* EspPath =
-        "C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
-    ReadEsp((char*)EspPath, true);
-    std::cout << "Finished reading ESP.\n";
+    EspDocument doc;
+    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
+
+    std::cout << "Starting ESP parsing...\n";
+    int state = ReadEsp(EspPath, doc);
+
+    if (state == 0) {
+        std::cout << "Finished reading ESP.\n";
+        std::cout << "Total records: " << doc.GetTotalCount() << "\n";
+
+        // Print statistics
+        doc.PrintStatistics();
+
+        // Example: Find a specific record
+        auto cellRecs = doc.FindCellsByEditorID("WhiterunWorld");
+        if (!cellRecs.empty()) {
+            std::cout << "\nFound " << cellRecs.size()
+                << " CELL records with EDID 'WhiterunWorld'\n";
+        }
+    }
+    else {
+        std::cerr << "Failed to read ESP\n";
+    }
+
     return 0;
 }
