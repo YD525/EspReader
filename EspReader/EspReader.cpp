@@ -78,7 +78,7 @@ void ParseGroup(std::ifstream& f)
 }
 
 
-void ParseRecord(std::ifstream& f, const char sig[4]) 
+void ParseRecord(std::ifstream& f, const char sig[4])
 {
     RecordHeader hdr;
     std::memcpy(hdr.sig, sig, 4);
@@ -97,8 +97,35 @@ void ParseRecord(std::ifstream& f, const char sig[4])
         << " FormID=0x" << std::hex << hdr.formID << std::dec
         << "\n";
 
-    if (hdr.dataSize > 0) {
-        f.seekg(hdr.dataSize, std::ios::cur);
+    // ---- SubRecord scan begins here ----
+
+    uint32_t bytesRead = 0;
+
+    while (bytesRead < hdr.dataSize && f.good())
+    {
+        char subSig[4];
+        uint16_t subSize = 0;
+
+        std::streampos before = f.tellg();
+
+        if (!f.read(subSig, 4))
+            break;
+
+        Read(f, subSize);
+
+        std::string subName(subSig, 4);
+
+        std::cout
+            << "  Sub: " << subName
+            << " Size=" << subSize
+            << "\n";
+
+
+        if (subSize > 0)
+            f.seekg(subSize, std::ios::cur);
+
+        std::streampos after = f.tellg();
+        bytesRead += uint32_t(after - before);
     }
 }
 
