@@ -1,4 +1,5 @@
 ﻿  EspReader.cpp
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(528,38): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(530,52): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(535,38): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(537,52): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+  miniz.c
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exe

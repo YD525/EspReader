@@ -16,6 +16,7 @@
 #include <windows.h>
 
 void Close();
+void ClearDocument();
 
 #pragma pack(push, 1)
 struct RecordHeader {
@@ -343,6 +344,7 @@ EspDocument* CurrentDocument;
 // Read ESP with filter
 int ReadEsp(const char* EspPath, const RecordFilter& filter)
 {
+    ClearDocument();//Ensure that nothing goes wrong~
     LastSetPath = EspPath;
     CurrentDocument = new EspDocument();
 
@@ -466,7 +468,7 @@ int main()
 
     Init();
 
-    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Chatty NPCs-133266-1-5-1737407563\\Chatty NPCs.esp";
+    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
 
     std::cout << "Starting ESP parsing with filter...\n";
     if (TranslateFilter->IsEnabled()) {
@@ -517,6 +519,11 @@ void Close()
     delete TranslateFilter;
     TranslateFilter = nullptr;
 
+    ClearDocument();
+}
+
+void ClearDocument()
+{
     delete CurrentDocument;
     CurrentDocument = nullptr;
 
@@ -561,6 +568,10 @@ inline std::vector<uint8_t> UTF8ToWindows1252(const std::string& utf8) {
 // Save ESP safely
 bool SaveEsp(const char* SavePath)
 {
+    if (sizeof(LastSetPath) == 0)
+    {
+        return false;
+    }
     std::ifstream fin(LastSetPath, std::ios::binary);
     if (!fin.is_open()) return false;
 
