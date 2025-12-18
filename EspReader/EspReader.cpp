@@ -628,13 +628,8 @@ bool SaveEsp(const char* SavePath)
 
                     std::vector<uint8_t> rawData;
 
-                    if (sub.IsText()) {
-                        const std::string& str = sub.GetString();
-                        rawData.assign(str.begin(), str.end());
-                    }
-                    else {
-                        rawData = sub.data;
-                    }
+                    const std::string& str = sub.GetString();
+                    rawData.assign(str.begin(), str.end());
 
                     sh.size = static_cast<uint16_t>(rawData.size());
 

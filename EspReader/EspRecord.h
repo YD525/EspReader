@@ -170,14 +170,6 @@ struct SubRecordData {
     std::string sig;
     std::vector<uint8_t> data;
 
-    bool IsText() const {
-        static const std::unordered_set<std::string> textSigs = {
-            "EDID","FULL","DESC","NAME","TEXT",
-            "MODL","ICON","NNAM","FNAM","RNAM","TNAM"
-        };
-        return textSigs.find(sig) != textSigs.end();
-    }
-
     // Get string data with proper encoding
     std::string GetString() const 
     {
@@ -234,16 +226,14 @@ public:
 
         auto it = recordSubMap.find(sig);
         if (it == recordSubMap.end()) {
-            // By default, return no subrecords
             return results;
         }
 
-        // Return all matching subrecords in order of the priority list
         for (const auto& subSig : it->second) {
             for (const auto& sub : subRecords) {
                 if (sub.sig == subSig) {
                     results.emplace_back(sub.sig, sub.GetString());
-                    break; // Once found, break the inner loop to maintain priority order
+                    break; 
                 }
             }
         }
