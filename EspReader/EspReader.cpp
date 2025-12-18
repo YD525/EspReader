@@ -9,6 +9,8 @@
 #include "miniz.h"
 #include "EspRecord.h"
 
+void Close();
+
 #pragma pack(push, 1)
 struct RecordHeader {
     char     sig[4];
@@ -416,7 +418,12 @@ void Init()
        {"WRLD", {"FULL"}},
     };
 
-    TranslateFilter->LoadFromConfig(Config);
+    //TranslateFilter->LoadFromConfig(Config);
+}
+
+void WaitForExit()
+{
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
 
 int main()
@@ -445,6 +452,10 @@ int main()
     else {
         std::cerr << "Failed to read ESP\n";
     }
+
+    Close();
+
+    WaitForExit();
 
     return 0;
 }
