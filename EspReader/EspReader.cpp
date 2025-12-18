@@ -363,71 +363,77 @@ int ReadEsp(const char* EspPath, const RecordFilter& filter)
     return 0;
 }
 
-int main()
+RecordFilter* TranslateFilter;
+void Init()
 {
-
-    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Skyrim.esm";
-
-    RecordFilter Filter;
+    TranslateFilter = new RecordFilter();
 
     // https://github.com/Cutleast/sse-plugin-interface/blob/master/src/sse_plugin_interface/string_records.py#L6-L47 
     //It borrows from the fields available for translation in sseat.
     std::unordered_map<std::string, std::vector<std::string>> Config = {
-        {"ACTI", {"FULL", "RNAM"}},
-        {"ALCH", {"FULL"}},
-        {"AMMO", {"FULL", "DESC"}},
-        {"APPA", {"FULL", "DESC"}},
-        {"ARMO", {"FULL", "DESC"}},
-        {"AVIF", {"FULL", "DESC"}},
-        {"BOOK", {"FULL", "DESC", "CNAM"}},
-        {"CLAS", {"FULL"}},
-        {"CELL", {"FULL"}},
-        {"CONT", {"FULL"}},
-        {"DIAL", {"FULL"}},
-        {"DOOR", {"FULL"}},
-        {"ENCH", {"FULL"}},
-        {"EXPL", {"FULL"}},
-        {"FLOR", {"FULL", "RNAM"}},
-        {"FURN", {"FULL"}},
-        {"HAZD", {"FULL"}},
-        {"INFO", {"NAM1", "RNAM"}},
-        {"INGR", {"FULL"}},
-        {"KEYM", {"FULL"}},
-        {"LCTN", {"FULL"}},
-        {"LIGH", {"FULL"}},
-        {"LSCR", {"DESC"}},
-        {"MESG", {"DESC", "FULL", "ITXT"}},
-        {"MGEF", {"FULL", "DNAM"}},
-        {"MISC", {"FULL"}},
-        {"NPC_", {"FULL", "SHRT"}},
-        {"NOTE", {"FULL", "TNAM"}},
-        {"PERK", {"FULL", "DESC", "EPF2", "EPFD"}},
-        {"PROJ", {"FULL"}},
-        {"QUST", {"FULL", "CNAM", "NNAM"}},
-        {"RACE", {"FULL", "DESC"}},
-        {"REFR", {"FULL"}},
-        {"REGN", {"RDMP"}},
-        {"SCRL", {"FULL", "DESC"}},
-        {"SHOU", {"FULL", "DESC"}},
-        {"SLGM", {"FULL"}},
-        {"SPEL", {"FULL", "DESC"}},
-        {"TACT", {"FULL"}},
-        {"TREE", {"FULL"}},
-        {"WEAP", {"DESC", "FULL"}},
-        {"WOOP", {"FULL", "TNAM"}},
-        {"WRLD", {"FULL"}},
+       {"ACTI", {"FULL", "RNAM"}},
+       {"ALCH", {"FULL"}},
+       {"AMMO", {"FULL", "DESC"}},
+       {"APPA", {"FULL", "DESC"}},
+       {"ARMO", {"FULL", "DESC"}},
+       {"AVIF", {"FULL", "DESC"}},
+       {"BOOK", {"FULL", "DESC", "CNAM"}},
+       {"CLAS", {"FULL"}},
+       {"CELL", {"FULL"}},
+       {"CONT", {"FULL"}},
+       {"DIAL", {"FULL"}},
+       {"DOOR", {"FULL"}},
+       {"ENCH", {"FULL"}},
+       {"EXPL", {"FULL"}},
+       {"FLOR", {"FULL", "RNAM"}},
+       {"FURN", {"FULL"}},
+       {"HAZD", {"FULL"}},
+       {"INFO", {"NAM1", "RNAM"}},
+       {"INGR", {"FULL"}},
+       {"KEYM", {"FULL"}},
+       {"LCTN", {"FULL"}},
+       {"LIGH", {"FULL"}},
+       {"LSCR", {"DESC"}},
+       {"MESG", {"DESC", "FULL", "ITXT"}},
+       {"MGEF", {"FULL", "DNAM"}},
+       {"MISC", {"FULL"}},
+       {"NPC_", {"FULL", "SHRT"}},
+       {"NOTE", {"FULL", "TNAM"}},
+       {"PERK", {"FULL", "DESC", "EPF2", "EPFD"}},
+       {"PROJ", {"FULL"}},
+       {"QUST", {"FULL", "CNAM", "NNAM"}},
+       {"RACE", {"FULL", "DESC"}},
+       {"REFR", {"FULL"}},
+       {"REGN", {"RDMP"}},
+       {"SCRL", {"FULL", "DESC"}},
+       {"SHOU", {"FULL", "DESC"}},
+       {"SLGM", {"FULL"}},
+       {"SPEL", {"FULL", "DESC"}},
+       {"TACT", {"FULL"}},
+       {"TREE", {"FULL"}},
+       {"WEAP", {"DESC", "FULL"}},
+       {"WOOP", {"FULL", "TNAM"}},
+       {"WRLD", {"FULL"}},
     };
-    Filter.LoadFromConfig(Config);
+
+    TranslateFilter->LoadFromConfig(Config);
+}
+
+int main()
+{
+    Init();
+
+    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Skyrim.esm";
 
     std::cout << "Starting ESP parsing with filter...\n";
-    if (Filter.IsEnabled()) {
+    if (TranslateFilter->IsEnabled()) {
         std::cout << "Filter is enabled - only specified records will be parsed.\n";
     }
     else {
         std::cout << "Filter is disabled - all records will be parsed.\n";
     }
 
-    int state = ReadEsp(EspPath,Filter);
+    int state = ReadEsp(EspPath,*TranslateFilter);
 
     if (state == 0) {
         std::cout << "Finished reading ESP.\n";
