@@ -44,52 +44,52 @@ constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
 // ===== Record Filter Configuration =====
 class RecordFilter {
 public:
-    
     void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) {
-        std::string sig(4, '\0');
-        for (size_t i = 0; i < recordType.size() && i < 4; ++i) {
-            sig[i] = recordType[i];
-        }
-
+        std::string sig = recordType.substr(0, 4); 
         recordTypes_.insert(sig);
 
-        for (const auto& sub : subRecords) {
-            std::string subSig(4, '\0');
-            for (size_t i = 0; i < sub.size() && i < 4; ++i) {
-                subSig[i] = sub[i];
-            }
+        for (size_t i = 0; i < subRecords.size(); ++i) {
+            std::string subSig = subRecords[i].substr(0, 4);
             subRecordFilters_[sig].insert(subSig);
         }
     }
 
-   
     bool ShouldParseRecord(const char sig[4]) const {
-        if (recordTypes_.empty()) return true; 
-        std::string sigStr(sig, 4);
-        return recordTypes_.count(sigStr) > 0;
+        if (recordTypes_.empty()) return true;
+        
+        for (std::unordered_set<std::string>::const_iterator it = recordTypes_.begin();
+            it != recordTypes_.end(); ++it) {
+            if (std::strncmp(it->c_str(), sig, 4) == 0) return true;
+        }
+        return false;
     }
 
-    
     bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const {
-        std::string recStr(recordSig, 4);
-        std::string subStr(subSig, 4);
+        for (std::unordered_map<std::string, std::unordered_set<std::string>>::const_iterator it = subRecordFilters_.begin();
+            it != subRecordFilters_.end(); ++it) {
+            if (std::strncmp(it->first.c_str(), recordSig, 4) != 0) continue;
 
-        auto it = subRecordFilters_.find(recStr);
-        if (it == subRecordFilters_.end()) return true; 
+            const std::unordered_set<std::string>& subs = it->second;
+            for (std::unordered_set<std::string>::const_iterator sit = subs.begin();
+                sit != subs.end(); ++sit) {
+                if (std::strncmp(sit->c_str(), subSig, 4) == 0) return true;
+            }
+            return false;
+        }
 
-        return it->second.count(subStr) > 0;
+        return true; 
     }
 
-   
-    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& config) {
-        for (const auto& pair : config) {
-            const std::string& recordType = pair.first;
-            const std::vector<std::string>& subRecords = pair.second;
-            AddRecordType(recordType, subRecords);
+  
+    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& config) 
+    {
+
+        for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = config.begin();
+            it != config.end(); ++it) {
+            AddRecordType(it->first, it->second);
         }
     }
 
-   
     bool IsEnabled() const {
         return !recordTypes_.empty();
     }
@@ -122,7 +122,6 @@ void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
         if (offset + sizeof(SubRecordHeader) + sub->size > dataSize) break;
 
-        // 只读取需要的子记录
         if (filter.ShouldParseSubRecord(recordSig, sub->sig)) {
             rec.AddSubRecord(sub->sig, data + offset + sizeof(SubRecordHeader), sub->size);
         }
@@ -157,7 +156,6 @@ void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec
             bytesRead += sub.size;
         }
 
-        // 只添加需要的子记录
         if (filter.ShouldParseSubRecord(recordSig, sub.sig)) {
             rec.AddSubRecord(sub.sig, buf.data(), sub.size);
         }
@@ -209,7 +207,7 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
 }
 
 // Iterative group parsing with filter
-void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter& filter)
+void ParseGroupIterative(std::ifstream& f, EspDocument &doc, const RecordFilter& filter)
 {
     struct GroupState {
         uint32_t remaining;
@@ -338,9 +336,13 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
     }
 }
 
+EspDocument* CurrentDocument;
+
 // Read ESP with filter
-int ReadEsp(const char* EspPath, EspDocument& doc, const RecordFilter& filter)
+int ReadEsp(const char* EspPath, const RecordFilter& filter)
 {
+    CurrentDocument = new EspDocument();
+
     std::ifstream f(EspPath, std::ios::binary);
     if (!f.is_open()) {
         std::cerr << "Failed to open ESP: " << EspPath << "\n";
@@ -352,10 +354,10 @@ int ReadEsp(const char* EspPath, EspDocument& doc, const RecordFilter& filter)
         if (!f.read(sig, 4)) break;
 
         if (IsGRUP(sig)) {
-            ParseGroupIterative(f, doc, filter);
+            ParseGroupIterative(f, *CurrentDocument, filter);
         }
         else {
-            ParseRecord(f, sig, doc, filter);
+            ParseRecord(f, sig, *CurrentDocument, filter);
         }
     }
     return 0;
@@ -363,7 +365,7 @@ int ReadEsp(const char* EspPath, EspDocument& doc, const RecordFilter& filter)
 
 int main()
 {
-    EspDocument doc;
+
     const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Skyrim.esm";
 
     RecordFilter Filter;
@@ -425,25 +427,29 @@ int main()
         std::cout << "Filter is disabled - all records will be parsed.\n";
     }
 
-    int state = ReadEsp(EspPath, doc, Filter);
+    int state = ReadEsp(EspPath,Filter);
 
     if (state == 0) {
         std::cout << "Finished reading ESP.\n";
-        std::cout << "Total records parsed: " << doc.GetTotalCount() << "\n";
+        std::cout << "Total records parsed: " << CurrentDocument->GetTotalCount() << "\n";
 
         // Print statistics
-        doc.PrintStatistics();
-
-        // Example: Find a specific record
-        auto cellRecs = doc.FindCellsByEditorID("WhiterunWorld");
-        if (!cellRecs.empty()) {
-            std::cout << "\nFound " << cellRecs.size()
-                << " CELL records with EDID 'WhiterunWorld'\n";
-        }
+        CurrentDocument->PrintStatistics();
     }
     else {
         std::cerr << "Failed to read ESP\n";
     }
 
     return 0;
+}
+
+std::vector<const EspRecord*> FindCellsByEditorID(char* EditorID)
+{
+    auto CellRecs = CurrentDocument->FindCellsByEditorID("WhiterunWorld");
+    if (!CellRecs.empty()) {
+        std::cout << "\nFound " << CellRecs.size()
+            << " CELL records with EDID 'WhiterunWorld'\n";
+    }
+
+    return CellRecs;
 }
