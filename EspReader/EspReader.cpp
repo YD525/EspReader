@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cstdint>
 #include <stack>
+#include <unordered_map>
+#include <unordered_set>
 #include "miniz.h"
 #include "EspRecord.h"
 
@@ -39,6 +41,64 @@ struct SubRecordHeader {
 
 constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
 
+// ===== Record Filter Configuration =====
+class RecordFilter {
+public:
+    
+    void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) {
+        std::string sig(4, '\0');
+        for (size_t i = 0; i < recordType.size() && i < 4; ++i) {
+            sig[i] = recordType[i];
+        }
+
+        recordTypes_.insert(sig);
+
+        for (const auto& sub : subRecords) {
+            std::string subSig(4, '\0');
+            for (size_t i = 0; i < sub.size() && i < 4; ++i) {
+                subSig[i] = sub[i];
+            }
+            subRecordFilters_[sig].insert(subSig);
+        }
+    }
+
+   
+    bool ShouldParseRecord(const char sig[4]) const {
+        if (recordTypes_.empty()) return true; 
+        std::string sigStr(sig, 4);
+        return recordTypes_.count(sigStr) > 0;
+    }
+
+    
+    bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const {
+        std::string recStr(recordSig, 4);
+        std::string subStr(subSig, 4);
+
+        auto it = subRecordFilters_.find(recStr);
+        if (it == subRecordFilters_.end()) return true; 
+
+        return it->second.count(subStr) > 0;
+    }
+
+   
+    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& config) {
+        for (const auto& pair : config) {
+            const std::string& recordType = pair.first;
+            const std::vector<std::string>& subRecords = pair.second;
+            AddRecordType(recordType, subRecords);
+        }
+    }
+
+   
+    bool IsEnabled() const {
+        return !recordTypes_.empty();
+    }
+
+private:
+    std::unordered_set<std::string> recordTypes_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> subRecordFilters_;
+};
+
 // Read helper
 template<typename T>
 inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out), sizeof(T)); }
@@ -53,20 +113,27 @@ bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& ou
     return ret == uncompressedSize;
 }
 
-// Parse subrecords from memory buffer
-void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec)
+// Parse subrecords from memory buffer with filter
+void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
+    const RecordFilter& filter, const char recordSig[4])
 {
     size_t offset = 0;
     while (offset + sizeof(SubRecordHeader) <= dataSize) {
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
         if (offset + sizeof(SubRecordHeader) + sub->size > dataSize) break;
-        rec.AddSubRecord(sub->sig, data + offset + sizeof(SubRecordHeader), sub->size);
+
+        // 只读取需要的子记录
+        if (filter.ShouldParseSubRecord(recordSig, sub->sig)) {
+            rec.AddSubRecord(sub->sig, data + offset + sizeof(SubRecordHeader), sub->size);
+        }
+
         offset += sizeof(SubRecordHeader) + sub->size;
     }
 }
 
-// Parse subrecords from stream
-void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec)
+// Parse subrecords from stream with filter
+void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec,
+    const RecordFilter& filter, const char recordSig[4])
 {
     uint32_t bytesRead = 0;
     while (bytesRead < recordSize && f.good()) {
@@ -89,12 +156,15 @@ void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec
             f.read(reinterpret_cast<char*>(buf.data()), sub.size);
             bytesRead += sub.size;
         }
-        rec.AddSubRecord(sub.sig, buf.data(), sub.size);
+
+        // 只添加需要的子记录
+        if (filter.ShouldParseSubRecord(recordSig, sub.sig)) {
+            rec.AddSubRecord(sub.sig, buf.data(), sub.size);
+        }
     }
 }
 
-// Parse a single record
-void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc)
+void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const RecordFilter& filter)
 {
     RecordHeader hdr{};
     std::memcpy(hdr.sig, sig, 4);
@@ -104,6 +174,12 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc)
     Read(f, hdr.versionCtrl);
     Read(f, hdr.version);
     Read(f, hdr.unknown);
+
+    if (!filter.ShouldParseRecord(hdr.sig)) 
+    {
+        f.seekg(hdr.dataSize, std::ios::cur);
+        return;
+    }
 
     EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
 
@@ -123,17 +199,17 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc)
 
         std::vector<uint8_t> decompressed;
         if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-            ParseSubRecords(decompressed.data(), decompressed.size(), rec);
+            ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.sig);
     }
     else {
-        ParseSubRecordsStream(f, hdr.dataSize, rec);
+        ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
     }
 
     doc.AddRecord(std::move(rec));
 }
 
-// Iterative group parsing
-void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
+// Iterative group parsing with filter
+void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter& filter)
 {
     struct GroupState {
         uint32_t remaining;
@@ -225,6 +301,13 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
                 continue;
             }
 
+            if (!filter.ShouldParseRecord(hdr.sig)) 
+            {
+                f.seekg(hdr.dataSize, std::ios::cur);
+                state.remaining -= recordTotalSize;
+                continue;
+            }
+
             // Now parse the record data
             EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
 
@@ -242,11 +325,11 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
 
                     std::vector<uint8_t> decompressed;
                     if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(decompressed.data(), decompressed.size(), rec);
+                        ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.sig);
                 }
             }
             else {
-                ParseSubRecordsStream(f, hdr.dataSize, rec);
+                ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
             }
 
             doc.AddRecord(std::move(rec));
@@ -255,8 +338,8 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
     }
 }
 
-// Read ESP
-int ReadEsp(const char* EspPath, EspDocument& doc)
+// Read ESP with filter
+int ReadEsp(const char* EspPath, EspDocument& doc, const RecordFilter& filter)
 {
     std::ifstream f(EspPath, std::ios::binary);
     if (!f.is_open()) {
@@ -269,10 +352,10 @@ int ReadEsp(const char* EspPath, EspDocument& doc)
         if (!f.read(sig, 4)) break;
 
         if (IsGRUP(sig)) {
-            ParseGroupIterative(f, doc);
+            ParseGroupIterative(f, doc, filter);
         }
         else {
-            ParseRecord(f, sig, doc);
+            ParseRecord(f, sig, doc, filter);
         }
     }
     return 0;
@@ -283,12 +366,70 @@ int main()
     EspDocument doc;
     const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Skyrim.esm";
 
-    std::cout << "Starting ESP parsing...\n";
-    int state = ReadEsp(EspPath, doc);
+    RecordFilter Filter;
+
+    // https://github.com/Cutleast/sse-plugin-interface/blob/master/src/sse_plugin_interface/string_records.py#L6-L47 
+    //It borrows from the fields available for translation in sseat.
+    std::unordered_map<std::string, std::vector<std::string>> Config = {
+        {"ACTI", {"FULL", "RNAM"}},
+        {"ALCH", {"FULL"}},
+        {"AMMO", {"FULL", "DESC"}},
+        {"APPA", {"FULL", "DESC"}},
+        {"ARMO", {"FULL", "DESC"}},
+        {"AVIF", {"FULL", "DESC"}},
+        {"BOOK", {"FULL", "DESC", "CNAM"}},
+        {"CLAS", {"FULL"}},
+        {"CELL", {"FULL"}},
+        {"CONT", {"FULL"}},
+        {"DIAL", {"FULL"}},
+        {"DOOR", {"FULL"}},
+        {"ENCH", {"FULL"}},
+        {"EXPL", {"FULL"}},
+        {"FLOR", {"FULL", "RNAM"}},
+        {"FURN", {"FULL"}},
+        {"HAZD", {"FULL"}},
+        {"INFO", {"NAM1", "RNAM"}},
+        {"INGR", {"FULL"}},
+        {"KEYM", {"FULL"}},
+        {"LCTN", {"FULL"}},
+        {"LIGH", {"FULL"}},
+        {"LSCR", {"DESC"}},
+        {"MESG", {"DESC", "FULL", "ITXT"}},
+        {"MGEF", {"FULL", "DNAM"}},
+        {"MISC", {"FULL"}},
+        {"NPC_", {"FULL", "SHRT"}},
+        {"NOTE", {"FULL", "TNAM"}},
+        {"PERK", {"FULL", "DESC", "EPF2", "EPFD"}},
+        {"PROJ", {"FULL"}},
+        {"QUST", {"FULL", "CNAM", "NNAM"}},
+        {"RACE", {"FULL", "DESC"}},
+        {"REFR", {"FULL"}},
+        {"REGN", {"RDMP"}},
+        {"SCRL", {"FULL", "DESC"}},
+        {"SHOU", {"FULL", "DESC"}},
+        {"SLGM", {"FULL"}},
+        {"SPEL", {"FULL", "DESC"}},
+        {"TACT", {"FULL"}},
+        {"TREE", {"FULL"}},
+        {"WEAP", {"DESC", "FULL"}},
+        {"WOOP", {"FULL", "TNAM"}},
+        {"WRLD", {"FULL"}},
+    };
+    Filter.LoadFromConfig(Config);
+
+    std::cout << "Starting ESP parsing with filter...\n";
+    if (Filter.IsEnabled()) {
+        std::cout << "Filter is enabled - only specified records will be parsed.\n";
+    }
+    else {
+        std::cout << "Filter is disabled - all records will be parsed.\n";
+    }
+
+    int state = ReadEsp(EspPath, doc, Filter);
 
     if (state == 0) {
         std::cout << "Finished reading ESP.\n";
-        std::cout << "Total records: " << doc.GetTotalCount() << "\n";
+        std::cout << "Total records parsed: " << doc.GetTotalCount() << "\n";
 
         // Print statistics
         doc.PrintStatistics();
