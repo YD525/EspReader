@@ -83,26 +83,31 @@ struct SubRecordData {
     std::string sig;
     std::vector<uint8_t> data;
 
+    bool IsText() const {
+        static const std::unordered_set<std::string> textSigs = {
+            "EDID","FULL","DESC","NAME","TEXT",
+            "MODL","ICON","NNAM","FNAM","RNAM","TNAM"
+        };
+        return textSigs.find(sig) != textSigs.end();
+    }
+
     // Get string data with proper encoding
-    std::string GetString() const {
+    std::string GetString() const 
+    {
         if (data.empty()) return "";
 
-        // Text fields that should be interpreted as strings
-        if (sig == "EDID" || sig == "FULL" || sig == "DESC" || sig == "NAME" ||
-            sig == "TEXT" || sig == "MODL" || sig == "ICON" || sig == "NNAM" ||
-            sig == "FNAM" || sig == "RNAM" || sig == "TNAM") {
+        if (IsText()) 
+        {
 
-            // Check if already UTF-8
             if (IsLikelyUTF8(data.data(), data.size())) {
                 return std::string(reinterpret_cast<const char*>(data.data()),
                     strnlen(reinterpret_cast<const char*>(data.data()), data.size()));
             }
 
-            // Convert from Windows-1252 to UTF-8
+            //Force -> UTF-8
             return Windows1252ToUTF8(data.data(), data.size());
         }
 
-        // For other fields, return raw data as string
         return std::string(reinterpret_cast<const char*>(data.data()), data.size());
     }
 };
@@ -144,6 +149,35 @@ public:
             }
         }
         return "";
+    }
+
+    std::vector<std::string> GetFullNames(std::unordered_map<std::string, std::vector<std::string>> recordFullMap) const 
+    {
+        std::vector<std::string> results;
+
+        auto it = recordFullMap.find(sig);
+        if (it == recordFullMap.end()) {
+            // 默认只返回 FULL
+            for (const auto& sub : subRecords) {
+                if (sub.sig == "FULL") {
+                    results.push_back(sub.GetString()); // 强制 UTF-8
+                    break;
+                }
+            }
+            return results;
+        }
+
+        // 遍历优先列表，按顺序返回所有匹配子记录
+        for (const auto& subSig : it->second) {
+            for (const auto& sub : subRecords) {
+                if (sub.sig == subSig) {
+                    results.push_back(sub.GetString()); // 强制 UTF-8
+                    break; // 一旦找到就跳出内层循环，按优先顺序
+                }
+            }
+        }
+
+        return results;
     }
 
     // Check if this is a CELL record

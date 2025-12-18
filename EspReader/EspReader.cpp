@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include "miniz.h"
 #include "EspRecord.h"
+#include <random>
 
 void Close();
 
@@ -47,7 +48,7 @@ constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
 class RecordFilter {
 public:
     void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) {
-        std::string sig = recordType.substr(0, 4); 
+        std::string sig = recordType.substr(0, 4);
         recordTypes_.insert(sig);
 
         for (size_t i = 0; i < subRecords.size(); ++i) {
@@ -56,36 +57,29 @@ public:
         }
     }
 
-    bool ShouldParseRecord(const char sig[4]) const {
-        if (recordTypes_.empty()) return true;
-        
-        for (std::unordered_set<std::string>::const_iterator it = recordTypes_.begin();
-            it != recordTypes_.end(); ++it) {
-            if (std::strncmp(it->c_str(), sig, 4) == 0) return true;
-        }
-        return false;
+    bool ShouldParseRecord(const char sig[4]) const 
+    {
+        return recordTypes_.count(std::string(sig, 4)) > 0;
     }
 
     bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const {
-        for (std::unordered_map<std::string, std::unordered_set<std::string>>::const_iterator it = subRecordFilters_.begin();
-            it != subRecordFilters_.end(); ++it) {
-            if (std::strncmp(it->first.c_str(), recordSig, 4) != 0) continue;
+        auto it = subRecordFilters_.find(std::string(recordSig, 4));
+        if (it == subRecordFilters_.end()) return false; 
 
-            const std::unordered_set<std::string>& subs = it->second;
-            for (std::unordered_set<std::string>::const_iterator sit = subs.begin();
-                sit != subs.end(); ++sit) {
-                if (std::strncmp(sit->c_str(), subSig, 4) == 0) return true;
-            }
-            return false;
+        const std::unordered_set<std::string>& subs = it->second;
+        if (subs.empty()) return true; 
+
+        for (const auto& s : subs) {
+            if (std::strncmp(s.c_str(), subSig, 4) == 0) return true;
         }
 
-        return true; 
+        return false; 
     }
 
-  
-    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& config) 
+    std::unordered_map<std::string, std::vector<std::string>> CurrentConfig;
+    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& config)
     {
-
+        CurrentConfig = config;
         for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = config.begin();
             it != config.end(); ++it) {
             AddRecordType(it->first, it->second);
@@ -175,7 +169,7 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
     Read(f, hdr.version);
     Read(f, hdr.unknown);
 
-    if (!filter.ShouldParseRecord(hdr.sig)) 
+    if (!filter.ShouldParseRecord(hdr.sig))
     {
         f.seekg(hdr.dataSize, std::ios::cur);
         return;
@@ -209,7 +203,7 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
 }
 
 // Iterative group parsing with filter
-void ParseGroupIterative(std::ifstream& f, EspDocument &doc, const RecordFilter& filter)
+void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter& filter)
 {
     struct GroupState {
         uint32_t remaining;
@@ -301,7 +295,7 @@ void ParseGroupIterative(std::ifstream& f, EspDocument &doc, const RecordFilter&
                 continue;
             }
 
-            if (!filter.ShouldParseRecord(hdr.sig)) 
+            if (!filter.ShouldParseRecord(hdr.sig))
             {
                 f.seekg(hdr.dataSize, std::ios::cur);
                 state.remaining -= recordTotalSize;
@@ -338,11 +332,13 @@ void ParseGroupIterative(std::ifstream& f, EspDocument &doc, const RecordFilter&
     }
 }
 
+std::string LastSetPath;
 EspDocument* CurrentDocument;
 
 // Read ESP with filter
 int ReadEsp(const char* EspPath, const RecordFilter& filter)
 {
+    LastSetPath = EspPath;
     CurrentDocument = new EspDocument();
 
     std::ifstream f(EspPath, std::ios::binary);
@@ -418,7 +414,7 @@ void Init()
        {"WRLD", {"FULL"}},
     };
 
-    //TranslateFilter->LoadFromConfig(Config);
+    TranslateFilter->LoadFromConfig(Config);
 }
 
 void WaitForExit()
@@ -426,11 +422,46 @@ void WaitForExit()
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
 
+void PrintRandomRecords(size_t count)
+{
+    if (!CurrentDocument) return;
+
+    size_t total = CurrentDocument->records.size();
+    if (total == 0) {
+        std::cout << "No records available.\n";
+        return;
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<size_t> dist(0, total - 1);
+
+    std::cout << "\n=== Random Records ===\n";
+
+    for (size_t i = 0; i < count; ++i) {
+        size_t idx = dist(gen);
+        const EspRecord& rec = CurrentDocument->records[idx];
+
+        std::cout << "Record " << i + 1 << ":\n";
+        std::cout << "  Sig: " << rec.sig << "\n";
+        std::cout << "  FormID: 0x" << std::hex << rec.formID << std::dec << "\n";
+        std::cout << "  EDID: " << rec.GetEditorID() << "\n";
+        auto names = rec.GetFullNames(TranslateFilter->CurrentConfig);
+        std::cout << "  FULL: ";
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i > 0) std::cout << " | "; // 用 | 分隔多个条目
+            std::cout << names[i];
+        }
+        std::cout << "\n";
+        std::cout << "  SubRecords: " << rec.subRecords.size() << "\n\n";
+    }
+}
+
 int main()
 {
     Init();
 
-    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Skyrim.esm";
+    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Chatty NPCs-133266-1-5-1737407563\\Chatty NPCs.esp";
 
     std::cout << "Starting ESP parsing with filter...\n";
     if (TranslateFilter->IsEnabled()) {
@@ -440,16 +471,21 @@ int main()
         std::cout << "Filter is disabled - all records will be parsed.\n";
     }
 
-    int state = ReadEsp(EspPath,*TranslateFilter);
+    int state = ReadEsp(EspPath, *TranslateFilter);
 
-    if (state == 0) {
+    if (state == 0) 
+    {
         std::cout << "Finished reading ESP.\n";
         std::cout << "Total records parsed: " << CurrentDocument->GetTotalCount() << "\n";
 
         // Print statistics
         CurrentDocument->PrintStatistics();
+
+        std::cout << "Randomly display record content.\n";
+        PrintRandomRecords(20);
     }
-    else {
+    else 
+    {
         std::cerr << "Failed to read ESP\n";
     }
 
@@ -478,4 +514,170 @@ void Close()
 
     delete CurrentDocument;
     CurrentDocument = nullptr;
+
+    LastSetPath = "";
+}
+
+bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
+{
+    mz_ulong destLen = compressBound(srcSize);
+    out.resize(destLen);
+    int ret = compress2(out.data(), &destLen, src, srcSize, Z_BEST_COMPRESSION);
+    if (ret != Z_OK) return false;
+    out.resize(destLen);
+    return true;
+}
+
+inline std::vector<uint8_t> UTF8ToWindows1252(const std::string& utf8) {
+    std::vector<uint8_t> result;
+    size_t i = 0;
+    while (i < utf8.size()) {
+        uint8_t c = utf8[i];
+        if (c < 0x80) {
+            result.push_back(c);
+            i++;
+        }
+        else if ((c & 0xE0) == 0xC0 && i + 1 < utf8.size()) {
+            uint16_t code = ((utf8[i] & 0x1F) << 6) | (utf8[i + 1] & 0x3F);
+            if (code >= 0xA0 && code <= 0xFF)
+                result.push_back(static_cast<uint8_t>(code));
+            else
+                result.push_back('?'); 
+            i += 2;
+        }
+        else {
+            result.push_back('?'); 
+            i++;
+        }
+    }
+    return result;
+}
+
+// Save ESP safely
+bool SaveEsp(const char* SavePath)
+{
+    std::ifstream fin(LastSetPath, std::ios::binary);
+    if (!fin.is_open()) return false;
+
+    std::ofstream fout(SavePath, std::ios::binary);
+    if (!fout.is_open()) return false;
+
+    while (fin.good() && fin.peek() != EOF) {
+        char sig[4];
+        if (!fin.read(sig, 4)) break;
+
+        if (IsGRUP(sig))
+        {
+            GroupHeader gh{};
+            std::memcpy(gh.sig, sig, 4);
+            Read(fin, gh.size);
+            fin.read(gh.label, 4);
+            Read(fin, gh.groupType);
+            Read(fin, gh.stamp);
+            Read(fin, gh.unknown);
+
+            fout.write(reinterpret_cast<char*>(&gh), sizeof(gh));
+
+            size_t remaining = gh.size - 24;
+            std::vector<char> buffer(remaining);
+            fin.read(buffer.data(), remaining);
+            fout.write(buffer.data(), remaining);
+        }
+        else
+        {
+            RecordHeader hdr{};
+            std::memcpy(hdr.sig, sig, 4);
+            Read(fin, hdr.dataSize);
+            Read(fin, hdr.flags);
+            Read(fin, hdr.formID);
+            Read(fin, hdr.versionCtrl);
+            Read(fin, hdr.version);
+            Read(fin, hdr.unknown);
+
+            std::string key = sig;
+            EspRecord* rec = nullptr;
+            auto it = CurrentDocument->recordIndex.find(key + ":" + std::to_string(hdr.formID));
+            if (it != CurrentDocument->recordIndex.end()) rec = &CurrentDocument->records[it->second];
+
+            if (!rec || rec->subRecords.empty()) 
+            {
+                std::vector<char> data(hdr.dataSize);
+                fin.read(data.data(), hdr.dataSize);
+
+                fout.write(sig, 4);
+                fout.write(reinterpret_cast<char*>(&hdr.dataSize), sizeof(hdr.dataSize));
+                fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
+                fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
+                fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
+                fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
+                fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
+                fout.write(data.data(), hdr.dataSize);
+            }
+            else
+            {
+                std::vector<uint8_t> recordData;
+
+                for (const auto& sub : rec->subRecords) {
+                    SubRecordHeader sh{};
+                    std::memcpy(sh.sig, sub.sig.c_str(), 4);
+
+                    std::vector<uint8_t> rawData;
+
+                    if (sub.IsText()) {
+                        const std::string& str = sub.GetString();
+                        rawData.assign(str.begin(), str.end());
+                    }
+                    else {
+                        rawData = sub.data;
+                    }
+
+                    sh.size = static_cast<uint16_t>(rawData.size());
+
+                    recordData.insert(recordData.end(),
+                        reinterpret_cast<uint8_t*>(&sh),
+                        reinterpret_cast<uint8_t*>(&sh) + sizeof(sh));
+
+                    recordData.insert(recordData.end(), rawData.begin(), rawData.end());
+                }
+
+                if (IsCompressed(hdr)) {
+                    std::vector<uint8_t> compressed;
+                    if (!ZlibCompress(recordData.data(), recordData.size(), compressed)) {
+                        std::cerr << "Failed to compress record " << hdr.sig << "\n";
+                        return false;
+                    }
+
+                    uint32_t totalSize = static_cast<uint32_t>(compressed.size() + 4);
+                    fout.write(sig, 4);
+                    fout.write(reinterpret_cast<char*>(&totalSize), sizeof(totalSize));
+                    fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
+                    fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
+                    fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
+                    fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
+                    fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
+
+                    uint32_t uncompressedSize = static_cast<uint32_t>(recordData.size());
+                    fout.write(reinterpret_cast<char*>(&uncompressedSize), sizeof(uncompressedSize));
+                    fout.write(reinterpret_cast<char*>(compressed.data()), compressed.size());
+                }
+                else {
+                    uint32_t totalSize = static_cast<uint32_t>(recordData.size());
+                    fout.write(sig, 4);
+                    fout.write(reinterpret_cast<char*>(&totalSize), sizeof(totalSize));
+                    fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
+                    fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
+                    fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
+                    fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
+                    fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
+                    fout.write(reinterpret_cast<char*>(recordData.data()), recordData.size());
+                }
+
+                fin.seekg(hdr.dataSize, std::ios::cur);
+            }
+        }
+    }
+
+    fin.close();
+    fout.close();
+    return true;
 }
