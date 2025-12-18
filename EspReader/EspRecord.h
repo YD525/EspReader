@@ -173,12 +173,21 @@ public:
 class EspDocument {
 public:
     std::vector<EspRecord> records;
-    std::unordered_map<std::string, size_t> recordIndex; // Key -> index in records array
-    std::unordered_set<uint32_t> formIDs; // Track FormIDs for conflict detection
-    std::unordered_map<std::string, std::vector<size_t>> cellRecords; // EDID -> indices for CELL records
+    std::unordered_map<std::string, size_t> recordIndex;
+    std::unordered_set<uint32_t> formIDs;
+    std::unordered_map<std::string, std::vector<size_t>> cellRecords;
+    size_t grupCount;
+    bool hasTES4Header;
+
+    EspDocument() : grupCount(0), hasTES4Header(false) {}
 
     void AddRecord(EspRecord&& rec) {
         std::string key = rec.GetUniqueKey();
+
+        // Track if this is the TES4 header
+        if (rec.sig == "TES4") {
+            hasTES4Header = true;
+        }
 
         // Check for FormID conflicts
         if (formIDs.count(rec.formID) > 0) {
@@ -202,6 +211,10 @@ public:
 
         recordIndex[key] = records.size();
         records.push_back(std::move(rec));
+    }
+
+    void IncrementGrupCount() {
+        grupCount++;
     }
 
     // Find record by FormID
@@ -228,8 +241,13 @@ public:
         return records.size();
     }
 
+    // TES5Edit counts Records + GRUPs (excluding TES4 header)
     size_t GetTotalCount() const {
-        return records.size(); // Only count records, not subrecords
+        size_t count = records.size() + grupCount;
+        if (hasTES4Header) {
+            count--; // Exclude TES4 header from count
+        }
+        return count;
     }
 
     // Print statistics
@@ -243,7 +261,13 @@ public:
         for (const auto& pair : typeCounts) {
             std::cout << pair.first << ": " << pair.second << "\n";
         }
-        std::cout << "Total: " << records.size() << " records\n";
+        std::cout << "Total Records: " << records.size() << "\n";
+        std::cout << "Total GRUPs: " << grupCount << "\n";
+        std::cout << "Total (Records + GRUPs";
+        if (hasTES4Header) {
+            std::cout << ", excluding TES4 header";
+        }
+        std::cout << "): " << GetTotalCount() << "\n";
 
         // Check for CELL conflicts
         size_t cellConflicts = 0;

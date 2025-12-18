@@ -151,6 +151,9 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
 
     if (gh.size < 24) return;
 
+    // Count this GRUP
+    doc.IncrementGrupCount();
+
     groupStack.push({ gh.size - 24 });
 
     while (!groupStack.empty()) {
@@ -191,6 +194,9 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc)
                 groupStack.pop();
                 continue;
             }
+
+            // Count this nested GRUP
+            doc.IncrementGrupCount();
 
             state.remaining -= gh.size;
             groupStack.push({ gh.size - 24 });
@@ -275,7 +281,7 @@ int ReadEsp(const char* EspPath, EspDocument& doc)
 int main()
 {
     EspDocument doc;
-    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
+    const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Skyrim.esm";
 
     std::cout << "Starting ESP parsing...\n";
     int state = ReadEsp(EspPath, doc);
