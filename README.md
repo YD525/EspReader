@@ -1,6 +1,6 @@
 # EspReader
 
-EspReader is a lightweight ESP file reading library intended as a backup and experimental DLL.
+EspReader is designed to replace the SSELex EspReader.cs class.
 
 This library was developed with reference to [SSE-Auto-Translator](https://github.com/Cutleast/SSE-Auto-Translator).    
 
