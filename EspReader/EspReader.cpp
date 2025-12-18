@@ -459,3 +459,12 @@ std::vector<const EspRecord*> FindCellsByEditorID(char* EditorID)
 
     return CellRecs;
 }
+
+void Close()
+{
+    delete TranslateFilter;
+    TranslateFilter = nullptr;
+
+    delete CurrentDocument;
+    CurrentDocument = nullptr;
+}
