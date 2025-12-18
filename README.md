@@ -1,0 +1,1 @@
+EspReader is a lightweight ESP file reading library intended as a backup and experimental DLL.  
