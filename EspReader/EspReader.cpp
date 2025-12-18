@@ -10,6 +10,11 @@
 #include "EspRecord.h"
 #include <random>
 
+#define NOMINMAX  
+#define WIN32_LEAN_AND_MEAN 
+
+#include <windows.h>
+
 void Close();
 
 #pragma pack(push, 1)
@@ -422,7 +427,7 @@ void WaitForExit()
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 }
 
-void PrintRandomRecords(size_t count)
+void PrintAllRecords()
 {
     if (!CurrentDocument) return;
 
@@ -432,33 +437,33 @@ void PrintRandomRecords(size_t count)
         return;
     }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<size_t> dist(0, total - 1);
+    std::cout << "\n=== All Records ===\n";
 
-    std::cout << "\n=== Random Records ===\n";
-
-    for (size_t i = 0; i < count; ++i) {
-        size_t idx = dist(gen);
-        const EspRecord& rec = CurrentDocument->records[idx];
-
-        std::cout << "Record " << i + 1 << ":\n";
+    size_t index = 1;
+    for (const auto& rec : CurrentDocument->records) {
+        std::cout << "Record " << index++ << ":\n";
         std::cout << "  Sig: " << rec.sig << "\n";
         std::cout << "  FormID: 0x" << std::hex << rec.formID << std::dec << "\n";
         std::cout << "  EDID: " << rec.GetEditorID() << "\n";
-        auto names = rec.GetFullNames(TranslateFilter->CurrentConfig);
-        std::cout << "  FULL: ";
-        for (size_t i = 0; i < names.size(); ++i) {
-            if (i > 0) std::cout << " | "; // 用 | 分隔多个条目
-            std::cout << names[i];
+
+        auto names = rec.GetSubRecordValues(TranslateFilter->CurrentConfig);
+        if (!names.empty()) {
+            std::cout << "  SubRecord Values: ";
+            for (size_t i = 0; i < names.size(); ++i) {
+                if (i > 0) std::cout << " | ";
+                std::cout << names[i].first << "=" << names[i].second;
+            }
+            std::cout << "\n";
         }
-        std::cout << "\n";
-        std::cout << "  SubRecords: " << rec.subRecords.size() << "\n\n";
+
+        std::cout << "  Total SubRecords: " << rec.subRecords.size() << "\n\n";
     }
 }
 
 int main()
 {
+    SetConsoleOutputCP(CP_UTF8);
+
     Init();
 
     const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Chatty NPCs-133266-1-5-1737407563\\Chatty NPCs.esp";
@@ -481,8 +486,8 @@ int main()
         // Print statistics
         CurrentDocument->PrintStatistics();
 
-        std::cout << "Randomly display record content.\n";
-        PrintRandomRecords(20);
+        std::cout << "Print All Records.\n";
+        PrintAllRecords();
     }
     else 
     {
