@@ -129,17 +129,16 @@ void ParseRecord(std::ifstream& f, const char sig[4])
     }
 }
 
-int main()
+int ReadEsp(char * EspPath,bool EnableLog)
 {
-    const char* EspPath =
-        "C:\\Users\\52508\\Desktop\\1TestMod\\Chatty NPCs-133266-1-5-1737407563\\Chatty NPCs.esp";
-
     std::ifstream f(EspPath, std::ios::binary);
     if (!f.is_open()) {
+        if(EnableLog)
         std::cerr << "Failed to open esp file: " << EspPath << "\n";
         return 1;
     }
 
+    if (EnableLog)
     std::cout << "Reading ESP: " << EspPath << "\n";
 
     while (f.good()) {
@@ -155,6 +154,13 @@ int main()
             ParseRecord(f, sig);
         }
     }
+}
+int main()
+{
+    const char* EspPath =
+        "C:\\Users\\52508\\Desktop\\1TestMod\\Chatty NPCs-133266-1-5-1737407563\\Chatty NPCs.esp";
+
+    ReadEsp((char*)EspPath, true);
 
     std::cout << "Finished reading ESP.\n";
     return 0;

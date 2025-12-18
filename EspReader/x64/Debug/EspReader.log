@@ -1,2 +1,3 @@
 ﻿  EspReader.cpp
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(157,1): warning C4715: 'ReadEsp': not all control paths return a value
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exe
