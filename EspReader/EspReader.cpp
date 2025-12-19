@@ -1,4 +1,4 @@
-#include <fstream>
+﻿#include <fstream>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -565,130 +565,420 @@ inline std::vector<uint8_t> UTF8ToWindows1252(const std::string& utf8) {
     return result;
 }
 
-// Save ESP safely
-bool SaveEsp(const char* SavePath)
-{
-    if (sizeof(LastSetPath) == 0)
-    {
-        return false;
-    }
-    std::ifstream fin(LastSetPath, std::ios::binary);
-    if (!fin.is_open()) return false;
 
-    std::ofstream fout(SavePath, std::ios::binary);
-    if (!fout.is_open()) return false;
+std::vector<uint8_t> ModifySubRecords(
+    const std::vector<uint8_t>& originalData,
+    EspRecord* modifiedRecord)
+{
+    std::vector<uint8_t> result;
+    size_t offset = 0;
+
+    // Build an index of modified subrecords: signature -> list of SubRecordData pointers
+    // This allows us to handle multiple subrecords with the same signature
+    std::unordered_map<std::string, std::vector<const SubRecordData*>> modifiedSubsMap;
+
+    for (const auto& sub : modifiedRecord->subRecords) {
+        modifiedSubsMap[sub.sig].push_back(&sub);
+    }
+
+    // Track how many times we've encountered each subrecord signature
+    // This ensures we match the Nth occurrence in original data with the Nth modified version
+    std::unordered_map<std::string, size_t> currentOccurrence;
+
+    // Iterate through all subrecords in the original data
+    while (offset + sizeof(SubRecordHeader) <= originalData.size()) {
+        SubRecordHeader sh;
+        std::memcpy(&sh, originalData.data() + offset, sizeof(sh));
+
+        // Validate that the subrecord doesn't exceed the data bounds
+        if (offset + sizeof(SubRecordHeader) + sh.size > originalData.size()) {
+            std::cerr << "Warning: Corrupted subrecord data detected, stopping at offset "
+                << offset << "\n";
+            break;
+        }
+
+        std::string subSig(sh.sig, 4);
+
+        // Check if this subrecord signature was modified
+        bool isModified = false;
+        const SubRecordData* modifiedSub = nullptr;
+
+        auto mapIt = modifiedSubsMap.find(subSig);
+        if (mapIt != modifiedSubsMap.end()) {
+            // Get the occurrence index for this signature
+            size_t occurrence = currentOccurrence[subSig]++;
+
+            // If we have a modified version for this occurrence, use it
+            if (occurrence < mapIt->second.size()) {
+                modifiedSub = mapIt->second[occurrence];
+                isModified = true;
+            }
+        }
+
+        if (isModified && modifiedSub) {
+            // Write the modified subrecord with new data (translation)
+            SubRecordHeader newSh = sh;
+            newSh.size = static_cast<uint16_t>(modifiedSub->data.size());
+
+            // Write the subrecord header
+            result.insert(result.end(),
+                reinterpret_cast<uint8_t*>(&newSh),
+                reinterpret_cast<uint8_t*>(&newSh) + sizeof(newSh));
+
+            // Write the modified data (UTF-8 translation)
+            result.insert(result.end(),
+                modifiedSub->data.begin(),
+                modifiedSub->data.end());
+        }
+        else {
+            // Preserve the original subrecord exactly as-is
+            // This includes subrecords that weren't filtered or weren't modified
+            result.insert(result.end(),
+                originalData.begin() + offset,
+                originalData.begin() + offset + sizeof(SubRecordHeader) + sh.size);
+        }
+
+        // Move to the next subrecord
+        offset += sizeof(SubRecordHeader) + sh.size;
+    }
+
+    return result;
+}
+
+// Forward declarations
+bool ProcessFileContent(std::ifstream& fin, std::ofstream& fout, int64_t remainingSize);
+bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4]);
+bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t contentSize);
+bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4]);
+
+/**
+ * Process file content recursively
+ *
+ * FIXED: Properly track bytes processed by reading stream position changes
+ *
+ * @param fin Input file stream
+ * @param fout Output file stream
+ * @param remainingSize Bytes remaining in current GRUP (-1 for top level)
+ * @return true if processing succeeded
+ */
+bool ProcessFileContent(std::ifstream& fin, std::ofstream& fout, int64_t remainingSize)
+{
+    int64_t bytesProcessed = 0;
 
     while (fin.good() && fin.peek() != EOF) {
+        // Check if we've reached the end of current GRUP
+        if (remainingSize >= 0 && bytesProcessed >= remainingSize) {
+            break;
+        }
+
+        // Read signature
         char sig[4];
+        std::streampos posBeforeSig = fin.tellg();
         if (!fin.read(sig, 4)) break;
 
-        if (IsGRUP(sig))
-        {
-            GroupHeader gh{};
-            std::memcpy(gh.sig, sig, 4);
-            Read(fin, gh.size);
-            fin.read(gh.label, 4);
-            Read(fin, gh.groupType);
-            Read(fin, gh.stamp);
-            Read(fin, gh.unknown);
+        // FIXED: Track actual bytes consumed by child functions
+        std::streampos posAfterSig = fin.tellg();
 
-            fout.write(reinterpret_cast<char*>(&gh), sizeof(gh));
-
-            size_t remaining = gh.size - 24;
-            std::vector<char> buffer(remaining);
-            fin.read(buffer.data(), remaining);
-            fout.write(buffer.data(), remaining);
-        }
-        else
-        {
-            RecordHeader hdr{};
-            std::memcpy(hdr.sig, sig, 4);
-            Read(fin, hdr.dataSize);
-            Read(fin, hdr.flags);
-            Read(fin, hdr.formID);
-            Read(fin, hdr.versionCtrl);
-            Read(fin, hdr.version);
-            Read(fin, hdr.unknown);
-
-            std::string key = sig;
-            EspRecord* rec = nullptr;
-            auto it = CurrentDocument->recordIndex.find(key + ":" + std::to_string(hdr.formID));
-            if (it != CurrentDocument->recordIndex.end()) rec = &CurrentDocument->records[it->second];
-
-            if (!rec || rec->subRecords.empty()) 
-            {
-                std::vector<char> data(hdr.dataSize);
-                fin.read(data.data(), hdr.dataSize);
-
-                fout.write(sig, 4);
-                fout.write(reinterpret_cast<char*>(&hdr.dataSize), sizeof(hdr.dataSize));
-                fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
-                fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
-                fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
-                fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
-                fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
-                fout.write(data.data(), hdr.dataSize);
-            }
-            else
-            {
-                std::vector<uint8_t> recordData;
-
-                for (const auto& sub : rec->subRecords) {
-                    SubRecordHeader sh{};
-                    std::memcpy(sh.sig, sub.sig.c_str(), 4);
-
-                    std::vector<uint8_t> rawData;
-
-                    const std::string& str = sub.GetString();
-                    rawData.assign(str.begin(), str.end());
-
-                    sh.size = static_cast<uint16_t>(rawData.size());
-
-                    recordData.insert(recordData.end(),
-                        reinterpret_cast<uint8_t*>(&sh),
-                        reinterpret_cast<uint8_t*>(&sh) + sizeof(sh));
-
-                    recordData.insert(recordData.end(), rawData.begin(), rawData.end());
-                }
-
-                if (IsCompressed(hdr)) {
-                    std::vector<uint8_t> compressed;
-                    if (!ZlibCompress(recordData.data(), recordData.size(), compressed)) {
-                        std::cerr << "Failed to compress record " << hdr.sig << "\n";
-                        return false;
-                    }
-
-                    uint32_t totalSize = static_cast<uint32_t>(compressed.size() + 4);
-                    fout.write(sig, 4);
-                    fout.write(reinterpret_cast<char*>(&totalSize), sizeof(totalSize));
-                    fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
-                    fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
-                    fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
-                    fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
-                    fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
-
-                    uint32_t uncompressedSize = static_cast<uint32_t>(recordData.size());
-                    fout.write(reinterpret_cast<char*>(&uncompressedSize), sizeof(uncompressedSize));
-                    fout.write(reinterpret_cast<char*>(compressed.data()), compressed.size());
-                }
-                else {
-                    uint32_t totalSize = static_cast<uint32_t>(recordData.size());
-                    fout.write(sig, 4);
-                    fout.write(reinterpret_cast<char*>(&totalSize), sizeof(totalSize));
-                    fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
-                    fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
-                    fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
-                    fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
-                    fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
-                    fout.write(reinterpret_cast<char*>(recordData.data()), recordData.size());
-                }
-
-                fin.seekg(hdr.dataSize, std::ios::cur);
+        if (IsGRUP(sig)) {
+            // Process GRUP recursively
+            if (!ProcessGRUP(fin, fout, sig)) {
+                std::cerr << "Error: Failed to process GRUP at position " << posBeforeSig << "\n";
+                return false;
             }
         }
+        else {
+            // Process individual record
+            if (!ProcessRecord(fin, fout, sig)) {
+                std::cerr << "Error: Failed to process record at position " << posBeforeSig << "\n";
+                return false;
+            }
+        }
+
+        // FIXED: Calculate bytes consumed by measuring stream position change
+        std::streampos posAfterProcess = fin.tellg();
+        int64_t consumed = static_cast<int64_t>(posAfterProcess) - static_cast<int64_t>(posBeforeSig);
+        bytesProcessed += consumed;
     }
+
+    return true;
+}
+
+/**
+ * Process a GRUP record recursively
+ *
+ * FIXED: Proper size tracking and GRUP header update
+ */
+bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
+{
+    GroupHeader gh{};
+    std::memcpy(gh.sig, sig, 4);
+
+    // Read GRUP header
+    Read(fin, gh.size);
+    fin.read(gh.label, 4);
+    Read(fin, gh.groupType);
+    Read(fin, gh.stamp);
+    Read(fin, gh.unknown);
+
+    if (gh.size < 24) {
+        std::cerr << "Error: Invalid GRUP size: " << gh.size << "\n";
+        return false;
+    }
+
+    // Write GRUP header (will update size later if contents change)
+    std::streampos grupHeaderPos = fout.tellp();
+    fout.write(reinterpret_cast<char*>(&gh), sizeof(gh));
+
+    // Remember where GRUP content starts in output
+    std::streampos grupContentStart = fout.tellp();
+
+    // Process GRUP contents recursively
+    int64_t contentSize = gh.size - 24; // 24 = sizeof(GroupHeader)
+
+    bool success = ProcessGRUPContent(fin, fout, contentSize);
+
+    if (!success) {
+        return false;
+    }
+
+    // Calculate actual output size
+    std::streampos grupContentEnd = fout.tellp();
+    uint32_t actualContentSize = static_cast<uint32_t>(grupContentEnd - grupContentStart);
+    uint32_t actualGrupSize = actualContentSize + 24;
+
+    // If size changed, update GRUP header
+    if (actualGrupSize != gh.size) {
+        std::streampos savedPos = fout.tellp();
+        fout.seekp(grupHeaderPos + std::streamoff(4)); // Offset to size field
+        fout.write(reinterpret_cast<char*>(&actualGrupSize), sizeof(actualGrupSize));
+        fout.seekp(savedPos);
+    }
+
+    return true;
+}
+
+/**
+ * Process contents within a GRUP
+ *
+ * FIXED: Proper byte tracking with safety fallback
+ */
+bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t contentSize)
+{
+    std::streampos contentStart = fin.tellg();
+    int64_t bytesProcessed = 0;
+
+    while (bytesProcessed < contentSize && fin.good()) {
+        if (contentSize - bytesProcessed < 4) {
+            // FIXED: Ensure remaining bytes are skipped
+            int64_t remaining = contentSize - bytesProcessed;
+            fin.seekg(remaining, std::ios::cur);
+            bytesProcessed += remaining;
+            break;
+        }
+
+        char sig[4];
+        std::streampos posBeforeRead = fin.tellg();
+        if (!fin.read(sig, 4)) {
+            std::cerr << "Error: Failed to read signature in GRUP content\n";
+            break;
+        }
+
+        if (IsGRUP(sig)) {
+            // Nested GRUP
+            if (!ProcessGRUP(fin, fout, sig)) {
+                return false;
+            }
+        }
+        else {
+            // Record
+            if (!ProcessRecord(fin, fout, sig)) {
+                return false;
+            }
+        }
+
+        // FIXED: Calculate actual bytes consumed
+        std::streampos posAfterProcess = fin.tellg();
+        int64_t consumed = static_cast<int64_t>(posAfterProcess - posBeforeRead);
+        bytesProcessed += consumed;
+    }
+
+    // FIXED: Safety check - if we didn't consume all bytes, skip remainder
+    if (bytesProcessed < contentSize) {
+        int64_t remaining = contentSize - bytesProcessed;
+        std::cerr << "Warning: Skipping " << remaining << " unprocessed bytes in GRUP\n";
+        fin.seekg(remaining, std::ios::cur);
+    }
+    // FIXED: If we somehow consumed too many bytes, rewind
+    else if (bytesProcessed > contentSize) {
+        int64_t excess = bytesProcessed - contentSize;
+        std::cerr << "Warning: Consumed " << excess << " extra bytes, rewinding\n";
+        fin.seekg(-excess, std::ios::cur);
+    }
+
+    return true;
+}
+
+/**
+ * Process an individual record
+ *
+ * FIXED: Byte-perfect copy for unmodified records
+ */
+bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
+{
+    RecordHeader hdr{};
+    std::memcpy(hdr.sig, sig, 4);
+
+    // Read all fields of the record header
+    Read(fin, hdr.dataSize);
+    Read(fin, hdr.flags);
+    Read(fin, hdr.formID);
+    Read(fin, hdr.versionCtrl);
+    Read(fin, hdr.version);
+    Read(fin, hdr.unknown);
+
+    // Build record key
+    std::string recordKey(sig, 4);
+    recordKey += ":" + std::to_string(hdr.formID);
+
+    auto it = CurrentDocument->recordIndex.find(recordKey);
+
+    if (it != CurrentDocument->recordIndex.end())
+    {
+        // Modified record - apply translations
+        EspRecord* rec = &CurrentDocument->records[it->second];
+
+        std::vector<uint8_t> originalData(hdr.dataSize);
+        fin.read(reinterpret_cast<char*>(originalData.data()), hdr.dataSize);
+
+        std::vector<uint8_t> workingData;
+        bool wasCompressed = IsCompressed(hdr);
+
+        if (wasCompressed) {
+            uint32_t uncompressedSize;
+            std::memcpy(&uncompressedSize, originalData.data(), 4);
+
+            if (!ZlibDecompress(originalData.data() + 4,
+                originalData.size() - 4,
+                workingData,
+                uncompressedSize)) {
+                std::cerr << "Error: Decompression failed for " << std::string(sig, 4)
+                    << " FormID 0x" << std::hex << hdr.formID << std::dec << "\n";
+                return false;
+            }
+        }
+        else {
+            workingData = originalData;
+        }
+
+        // Apply translations
+        workingData = ModifySubRecords(workingData, rec);
+
+        std::vector<uint8_t> finalData;
+        if (wasCompressed) {
+            std::vector<uint8_t> compressed;
+            if (!ZlibCompress(workingData.data(), workingData.size(), compressed)) {
+                std::cerr << "Error: Compression failed for " << std::string(sig, 4)
+                    << " FormID 0x" << std::hex << hdr.formID << std::dec << "\n";
+                return false;
+            }
+
+            finalData.resize(4 + compressed.size());
+            uint32_t uncompSize = static_cast<uint32_t>(workingData.size());
+            std::memcpy(finalData.data(), &uncompSize, 4);
+            std::memcpy(finalData.data() + 4, compressed.data(), compressed.size());
+        }
+        else {
+            finalData = workingData;
+        }
+
+        // Update header with new size
+        hdr.dataSize = static_cast<uint32_t>(finalData.size());
+
+        // Write modified record
+        fout.write(sig, 4);
+        fout.write(reinterpret_cast<char*>(&hdr.dataSize), sizeof(hdr.dataSize));
+        fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
+        fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
+        fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
+        fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
+        fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
+        fout.write(reinterpret_cast<char*>(finalData.data()), finalData.size());
+    }
+    else
+    {
+        // FIXED: Byte-perfect copy for unmodified records
+        // Read entire record (header + data) as a single block
+        uint32_t totalSize = 24 + hdr.dataSize; // 24 = sizeof(RecordHeader)
+
+        // Allocate buffer for complete record
+        std::vector<uint8_t> completeRecord(totalSize);
+
+        // Copy signature (already read)
+        std::memcpy(completeRecord.data(), sig, 4);
+
+        // Copy header fields (already read)
+        std::memcpy(completeRecord.data() + 4, &hdr.dataSize, sizeof(hdr.dataSize));
+        std::memcpy(completeRecord.data() + 8, &hdr.flags, sizeof(hdr.flags));
+        std::memcpy(completeRecord.data() + 12, &hdr.formID, sizeof(hdr.formID));
+        std::memcpy(completeRecord.data() + 16, &hdr.versionCtrl, sizeof(hdr.versionCtrl));
+        std::memcpy(completeRecord.data() + 20, &hdr.version, sizeof(hdr.version));
+        std::memcpy(completeRecord.data() + 22, &hdr.unknown, sizeof(hdr.unknown));
+
+        // Read record data
+        fin.read(reinterpret_cast<char*>(completeRecord.data() + 24), hdr.dataSize);
+
+        // Write entire record as one block - byte-perfect copy
+        fout.write(reinterpret_cast<char*>(completeRecord.data()), totalSize);
+    }
+
+    return true;
+}
+
+/**
+ * Save ESP with translations applied
+ *
+ * This implementation fixes all structural risks:
+ * 1. Proper byte tracking throughout the file
+ * 2. Safety fallbacks for incomplete reads
+ * 3. Byte-perfect copy for unmodified records
+ */
+bool SaveEsp(const char* SavePath)
+{
+    if (LastSetPath.empty()) {
+        std::cerr << "Error: No source ESP file path set\n";
+        return false;
+    }
+
+    std::ifstream fin(LastSetPath, std::ios::binary);
+    if (!fin.is_open()) {
+        std::cerr << "Error: Cannot open source ESP file: " << LastSetPath << "\n";
+        return false;
+    }
+
+    std::ofstream fout(SavePath, std::ios::binary);
+    if (!fout.is_open()) {
+        std::cerr << "Error: Cannot create output ESP file: " << SavePath << "\n";
+        fin.close();
+        return false;
+    }
+
+    std::cout << "Processing: " << LastSetPath << " -> " << SavePath << "\n";
+
+    // Process file with recursive GRUP handling
+    // -1 means no size limit (top level)
+    bool success = ProcessFileContent(fin, fout, -1);
 
     fin.close();
     fout.close();
-    return true;
+
+    if (success) {
+        std::cout << "Successfully saved modified ESP to: " << SavePath << "\n";
+    }
+    else {
+        std::cerr << "Failed to save ESP file\n";
+        // Optionally delete incomplete output file
+        // std::remove(SavePath);
+    }
+
+    return success;
 }
