@@ -343,6 +343,7 @@ class EspDocument
 				<< " for record " << rec.sig << "\n";
 		}
 
+		// CELL 仅做分类用途（不是主键）
 		if (rec.IsCell())
 		{
 			cellRecords[UniqueKey].push_back(index);
