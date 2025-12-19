@@ -1,9 +1,9 @@
 ﻿  EspReader.cpp
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(585,38): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(587,52): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(587,38): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(589,52): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
   miniz.c
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 1556 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 1546 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exe

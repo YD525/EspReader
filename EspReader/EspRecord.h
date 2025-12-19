@@ -252,18 +252,6 @@ class EspRecord
 		subRecords.push_back(std::move(sub));
 	}
 
-	std::string GetStableKey() const
-	{
-		//Sig + FormID
-		return sig + ":" + std::to_string(formID);
-	}
-
-	// Get EDID (Editor ID) if exists
-	std::string GetEditorID() const 
-	{
-		return GetStableKey();
-	}
-
 	// Get FULL (Display Name) if exists
 	std::string GetFullName() const 
 	{
@@ -309,18 +297,8 @@ class EspRecord
 		return sig == "CELL";
 	}
 
-	// Get unique key for this record
 	std::string GetUniqueKey() const
 	{
-		// For CELL records, use EDID + FormID to avoid conflicts
-		if (IsCell()) 
-		{
-			std::string edid = GetEditorID();
-			if (!edid.empty()) {
-				return sig + ":" + edid + ":" + std::to_string(formID);
-			}
-		}
-
 		// For other records, FormID should be unique
 		return sig + ":" + std::to_string(formID);
 	}
@@ -333,7 +311,7 @@ class EspRecord
 
 class EspDocument
 {
-public:
+	public:
 	std::vector<EspRecord> records;
 	std::unordered_map<std::string, size_t> recordIndex;
 	std::unordered_set<uint32_t> formIDs;
@@ -361,7 +339,7 @@ public:
 
 		// Track CELL records separately
 		if (rec.IsCell()) {
-			std::string edid = rec.GetEditorID();
+			std::string edid = rec.GetUniqueKey();
 			if (!edid.empty()) {
 				cellRecords[edid].push_back(records.size());
 			}
@@ -370,6 +348,19 @@ public:
 		// Check for key conflicts
 		if (recordIndex.count(key) > 0) {
 			std::cerr << "Warning: Duplicate key '" << key << "'\n";
+		}
+
+		std::string UniqueKey = rec.GetUniqueKey();
+		size_t index = records.size();
+
+		if (recordIndex.count(key))
+		{
+			std::cerr << "[Warn] Duplicate record key: " << key << "\n";
+			// 不 return，继续收集 record，本体数据不能丢
+		}
+		else
+		{
+			recordIndex[key] = index;
 		}
 
 		recordIndex[key] = records.size();
@@ -381,24 +372,14 @@ public:
 		grupCount++;
 	}
 
-	// Find record by FormID
-	const EspRecord* FindByFormID(uint32_t formID) const
-	{
-		for (const auto& rec : records)
-		{
-			if (rec.formID == formID) return &rec;
-		}
-		return nullptr;
-	}
-
 	// Find CELL records by Editor ID
-	std::vector<const EspRecord*> FindByEditorID(const std::string& editID) const
+	std::vector<const EspRecord*> FindByUniqueKey(const std::string& UniqueKey) const
 	{
 		std::vector<const EspRecord*> result;
 
 		for (const auto& record : records)
 		{
-			if (record.GetEditorID() == editID)
+			if (record.GetUniqueKey() == UniqueKey)
 			{
 				result.push_back(&record);
 			}

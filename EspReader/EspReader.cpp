@@ -398,10 +398,12 @@ int ReadEsp(const char* EspPath, const RecordFilter& filter)
         char sig[4];
         if (!f.read(sig, 4)) break;
 
-        if (IsGRUP(sig)) {
+        if (IsGRUP(sig)) 
+        {
             ParseGroupIterative(f, *CurrentDocument, filter);
         }
-        else {
+        else 
+        {
             ParseRecord(f, sig, *CurrentDocument, filter);
         }
     }
@@ -489,7 +491,7 @@ void PrintAllRecords()
         std::cout << "Record " << index++ << ":\n";
         std::cout << "  Sig: " << rec.sig << "\n";
         std::cout << "  FormID: 0x" << std::hex << rec.formID << std::dec << "\n";
-        std::cout << "  EDID: " << rec.GetEditorID() << "\n";
+        std::cout << "  Key: " << rec.GetUniqueKey() << "\n";
 
         auto names = rec.GetSubRecordValues(TranslateFilter->CurrentConfig);
         if (!names.empty()) {
@@ -547,14 +549,14 @@ int main()
     return 0;
 }
 
-std::vector<const EspRecord*> FindCellsByEditorID(char* EditorID)
+std::vector<const EspRecord*> GetRecordByEditorID(char* EditorID)
 {
     if (!EditorID)
         return {};
 
     std::string UniqueKey(EditorID);
 
-    auto Item = CurrentDocument->FindByEditorID(UniqueKey);
+    auto Item = CurrentDocument->FindByUniqueKey(UniqueKey);
 
     if (!Item.empty())
     {
