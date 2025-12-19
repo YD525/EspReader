@@ -254,7 +254,7 @@ class EspRecord
 
 	std::string GetStableKey() const
 	{
-		// Sig + 原始 FormID，完全稳定
+		//Sig + FormID
 		return sig + ":" + std::to_string(formID);
 	}
 
@@ -392,17 +392,18 @@ public:
 	}
 
 	// Find CELL records by Editor ID
-	std::vector<const EspRecord*> FindCellsByEditorID(const std::string& edid) const
+	std::vector<const EspRecord*> FindByEditorID(const std::string& editID) const
 	{
 		std::vector<const EspRecord*> result;
-		auto it = cellRecords.find(edid);
-		if (it != cellRecords.end())
+
+		for (const auto& record : records)
 		{
-			for (size_t idx : it->second)
+			if (record.GetEditorID() == editID)
 			{
-				result.push_back(&records[idx]);
+				result.push_back(&record);
 			}
 		}
+
 		return result;
 	}
 
