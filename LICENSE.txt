@@ -1,6 +1,52 @@
-Copyright (c) 2025 YD525(https://github.com/YD525), Cutleast(https://github.com/cutleast)
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Dual-Author Attribution License
+===============================
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+Copyright (c) 2025
+YD525 (https://github.com/YD525)
+Cutleast (https://github.com/cutleast)
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+------------------------------------------------------------
+
+This software is jointly developed and owned by YD525 and Cutleast.
+
+Special Permission for the Authors
+----------------------------------
+YD525 and Cutleast, as joint copyright holders, as well as projects
+developed by them including but not limited to SSELex and SSEAT,
+are granted unrestricted rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or commercialize this software
+without any obligation, attribution requirement, or limitation.
+
+------------------------------------------------------------
+
+Permission for Third Parties
+----------------------------
+Permission is hereby granted, free of charge, to any third party
+obtaining a copy of this software and associated documentation files
+(the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software,
+subject to the following conditions:
+
+1. Attribution Requirement  
+   All copies or substantial portions of the Software must include
+   clear attribution to BOTH original authors, including at least
+   one of the following:
+   - A link to https://github.com/YD525
+   - A link to https://github.com/cutleast
+
+2. No Misrepresentation  
+   Third parties may not claim authorship of the Software, nor imply
+   endorsement, maintenance, or responsibility by YD525 or Cutleast.
+
+------------------------------------------------------------
+
+Disclaimer
+----------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
