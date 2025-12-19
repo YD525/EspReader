@@ -356,20 +356,18 @@ class EspDocument
 		grupCount++;
 	}
 
-	// Find CELL records by Editor ID
-	std::vector<const EspRecord*> FindByUniqueKey(const std::string& UniqueKey) const
+	// Find Record by Editor ID
+	const EspRecord* FindByUniqueKey(const std::string& key) const
 	{
-		std::vector<const EspRecord*> result;
-
-		for (const auto& record : records)
+		for (const auto& rec : records)
 		{
-			if (record.GetUniqueKey() == UniqueKey)
+			if (rec.GetUniqueKey() == key)
 			{
-				result.push_back(&record);
+				return &rec;
 			}
 		}
 
-		return result;
+		return nullptr;
 	}
 
 	size_t GetCount() const

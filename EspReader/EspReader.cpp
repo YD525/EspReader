@@ -125,6 +125,17 @@ bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& ou
     return ret == uncompressedSize;
 }
 
+//EnCompress
+bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
+{
+    mz_ulong destLen = compressBound(srcSize);
+    out.resize(destLen);
+    int ret = compress2(out.data(), &destLen, src, srcSize, Z_BEST_COMPRESSION);
+    if (ret != Z_OK) return false;
+    out.resize(destLen);
+    return true;
+}
+
 // Parse subrecords from memory buffer with filter
 void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
     const RecordFilter& filter, const char recordSig[4])
@@ -549,19 +560,14 @@ int main()
     return 0;
 }
 
-std::vector<const EspRecord*> GetRecordByEditorID(char* EditorID)
+const EspRecord* GetRecord(char* Key)
 {
-    if (!EditorID)
+    if (!Key)
         return {};
 
-    std::string UniqueKey(EditorID);
+    std::string UniqueKey(Key);
 
     auto Item = CurrentDocument->FindByUniqueKey(UniqueKey);
-
-    if (!Item.empty())
-    {
-        std::cout << "\nFound " << Item.size();
-    }
 
     return Item;
 }
@@ -582,16 +588,7 @@ void ClearDocument()
     LastSetPath = "";
 }
 
-bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
-{
-    mz_ulong destLen = compressBound(srcSize);
-    out.resize(destLen);
-    int ret = compress2(out.data(), &destLen, src, srcSize, Z_BEST_COMPRESSION);
-    if (ret != Z_OK) return false;
-    out.resize(destLen);
-    return true;
-}
-
+#pragma region  SaveFunc
 std::vector<uint8_t> ModifySubRecords(
     const std::vector<uint8_t>& originalData,
     EspRecord* modifiedRecord)
@@ -603,7 +600,7 @@ std::vector<uint8_t> ModifySubRecords(
     // This allows us to handle multiple subrecords with the same signature
     std::unordered_map<std::string, std::vector<const SubRecordData*>> modifiedSubsMap;
 
-    for (const auto& sub : modifiedRecord->subRecords) 
+    for (const auto& sub : modifiedRecord->subRecords)
     {
         modifiedSubsMap[sub.sig].push_back(&sub);
     }
@@ -613,13 +610,13 @@ std::vector<uint8_t> ModifySubRecords(
     std::unordered_map<std::string, size_t> currentOccurrence;
 
     // Iterate through all subrecords in the original data
-    while (offset + sizeof(SubRecordHeader) <= originalData.size()) 
+    while (offset + sizeof(SubRecordHeader) <= originalData.size())
     {
         SubRecordHeader sh;
         std::memcpy(&sh, originalData.data() + offset, sizeof(sh));
 
         // Validate that the subrecord doesn't exceed the data bounds
-        if (offset + sizeof(SubRecordHeader) + sh.size > originalData.size()) 
+        if (offset + sizeof(SubRecordHeader) + sh.size > originalData.size())
         {
             std::cerr << "Warning: Corrupted subrecord data detected, stopping at offset "
                 << offset << "\n";
@@ -633,20 +630,20 @@ std::vector<uint8_t> ModifySubRecords(
         const SubRecordData* modifiedSub = nullptr;
 
         auto mapIt = modifiedSubsMap.find(subSig);
-        if (mapIt != modifiedSubsMap.end()) 
+        if (mapIt != modifiedSubsMap.end())
         {
             // Get the occurrence index for this signature
             size_t occurrence = currentOccurrence[subSig]++;
 
             // If we have a modified version for this occurrence, use it
-            if (occurrence < mapIt->second.size()) 
+            if (occurrence < mapIt->second.size())
             {
                 modifiedSub = mapIt->second[occurrence];
                 isModified = true;
             }
         }
 
-        if (isModified && modifiedSub) 
+        if (isModified && modifiedSub)
         {
             if (modifiedSub->data.size() > 0xFFFF)
             {
@@ -670,7 +667,7 @@ std::vector<uint8_t> ModifySubRecords(
                 modifiedSub->data.begin(),
                 modifiedSub->data.end());
         }
-        else 
+        else
         {
             // Preserve the original subrecord exactly as-is
             // This includes subrecords that weren't filtered or weren't modified
@@ -706,10 +703,10 @@ bool ProcessFileContent(std::ifstream& fin, std::ofstream& fout, int64_t remaini
 {
     int64_t bytesProcessed = 0;
 
-    while (fin.good() && fin.peek() != EOF) 
+    while (fin.good() && fin.peek() != EOF)
     {
         // Check if we've reached the end of current GRUP
-        if (remainingSize >= 0 && bytesProcessed >= remainingSize) 
+        if (remainingSize >= 0 && bytesProcessed >= remainingSize)
         {
             break;
         }
@@ -722,19 +719,19 @@ bool ProcessFileContent(std::ifstream& fin, std::ofstream& fout, int64_t remaini
         // FIXED: Track actual bytes consumed by child functions
         std::streampos posAfterSig = fin.tellg();
 
-        if (IsGRUP(sig)) 
+        if (IsGRUP(sig))
         {
             // Process GRUP recursively
-            if (!ProcessGRUP(fin, fout, sig)) 
+            if (!ProcessGRUP(fin, fout, sig))
             {
                 std::cerr << "Error: Failed to process GRUP at position " << posBeforeSig << "\n";
                 return false;
             }
         }
-        else 
+        else
         {
             // Process individual record
-            if (!ProcessRecord(fin, fout, sig)) 
+            if (!ProcessRecord(fin, fout, sig))
             {
                 std::cerr << "Error: Failed to process record at position " << posBeforeSig << "\n";
                 return false;
@@ -767,7 +764,7 @@ bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
     Read(fin, gh.stamp);
     Read(fin, gh.unknown);
 
-    if (gh.size < 24) 
+    if (gh.size < 24)
     {
         std::cerr << "Error: Invalid GRUP size: " << gh.size << "\n";
         return false;
@@ -785,7 +782,7 @@ bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
 
     bool success = ProcessGRUPContent(fin, fout, contentSize);
 
-    if (!success) 
+    if (!success)
     {
         return false;
     }
@@ -796,7 +793,7 @@ bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
     uint32_t actualGrupSize = actualContentSize + 24;
 
     // If size changed, update GRUP header
-    if (actualGrupSize != gh.size) 
+    if (actualGrupSize != gh.size)
     {
         std::streampos savedPos = fout.tellp();
         fout.seekp(grupHeaderPos + std::streamoff(4)); // Offset to size field
@@ -817,9 +814,9 @@ bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t content
     std::streampos contentStart = fin.tellg();
     int64_t bytesProcessed = 0;
 
-    while (bytesProcessed < contentSize && fin.good()) 
+    while (bytesProcessed < contentSize && fin.good())
     {
-        if (contentSize - bytesProcessed < 4) 
+        if (contentSize - bytesProcessed < 4)
         {
             // FIXED: Ensure remaining bytes are skipped
             int64_t remaining = contentSize - bytesProcessed;
@@ -830,7 +827,7 @@ bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t content
 
         char sig[4];
         std::streampos posBeforeRead = fin.tellg();
-        if (!fin.read(sig, 4)) 
+        if (!fin.read(sig, 4))
         {
             std::cerr << "Error: Failed to read signature in GRUP content\n";
             break;
@@ -838,14 +835,14 @@ bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t content
 
         if (IsGRUP(sig)) {
             // Nested GRUP
-            if (!ProcessGRUP(fin, fout, sig)) 
+            if (!ProcessGRUP(fin, fout, sig))
             {
                 return false;
             }
         }
         else {
             // Record
-            if (!ProcessRecord(fin, fout, sig)) 
+            if (!ProcessRecord(fin, fout, sig))
             {
                 return false;
             }
@@ -858,7 +855,7 @@ bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t content
     }
 
     // FIXED: Safety check - if we didn't consume all bytes, skip remainder
-    if (bytesProcessed < contentSize) 
+    if (bytesProcessed < contentSize)
     {
         int64_t remaining = contentSize - bytesProcessed;
         std::cerr << "Warning: Skipping " << remaining << " unprocessed bytes in GRUP\n";
@@ -873,7 +870,7 @@ bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t content
             std::cerr << "Warning: Consumed " << excess << " extra bytes, rewinding\n";
             fin.seekg(-excess, std::ios::cur);
         }
-    }   
+    }
 
     return true;
 }
@@ -913,7 +910,7 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
         std::vector<uint8_t> workingData;
         bool wasCompressed = IsCompressed(hdr);
 
-        if (wasCompressed) 
+        if (wasCompressed)
         {
             uint32_t uncompressedSize;
             std::memcpy(&uncompressedSize, originalData.data(), 4);
@@ -921,14 +918,14 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
             if (!ZlibDecompress(originalData.data() + 4,
                 originalData.size() - 4,
                 workingData,
-                uncompressedSize)) 
+                uncompressedSize))
             {
                 std::cerr << "Error: Decompression failed for " << std::string(sig, 4)
                     << " FormID 0x" << std::hex << hdr.formID << std::dec << "\n";
                 return false;
             }
         }
-        else 
+        else
         {
             workingData = originalData;
         }
@@ -937,10 +934,10 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
         workingData = ModifySubRecords(workingData, rec);
 
         std::vector<uint8_t> finalData;
-        if (wasCompressed) 
+        if (wasCompressed)
         {
             std::vector<uint8_t> compressed;
-            if (!ZlibCompress(workingData.data(), workingData.size(), compressed)) 
+            if (!ZlibCompress(workingData.data(), workingData.size(), compressed))
             {
                 std::cerr << "Error: Compression failed for " << std::string(sig, 4)
                     << " FormID 0x" << std::hex << hdr.formID << std::dec << "\n";
@@ -952,7 +949,7 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
             std::memcpy(finalData.data(), &uncompSize, 4);
             std::memcpy(finalData.data() + 4, compressed.data(), compressed.size());
         }
-        else 
+        else
         {
             finalData = workingData;
         }
@@ -1010,21 +1007,21 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
  */
 bool SaveEsp(const char* SavePath)
 {
-    if (LastSetPath.empty()) 
+    if (LastSetPath.empty())
     {
         std::cerr << "Error: No source ESP file path set\n";
         return false;
     }
 
     std::ifstream fin(LastSetPath, std::ios::binary);
-    if (!fin.is_open()) 
+    if (!fin.is_open())
     {
         std::cerr << "Error: Cannot open source ESP file: " << LastSetPath << "\n";
         return false;
     }
 
     std::ofstream fout(SavePath, std::ios::binary);
-    if (!fout.is_open()) 
+    if (!fout.is_open())
     {
         std::cerr << "Error: Cannot create output ESP file: " << SavePath << "\n";
         fin.close();
@@ -1040,11 +1037,11 @@ bool SaveEsp(const char* SavePath)
     fin.close();
     fout.close();
 
-    if (success) 
+    if (success)
     {
         std::cout << "Successfully saved modified ESP to: " << SavePath << "\n";
     }
-    else 
+    else
     {
         std::cerr << "Failed to save ESP file\n";
         // Optionally delete incomplete output file
@@ -1053,3 +1050,5 @@ bool SaveEsp(const char* SavePath)
 
     return success;
 }
+#pragma endregion
+
