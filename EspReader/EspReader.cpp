@@ -19,7 +19,8 @@ void Close();
 void ClearDocument();
 
 #pragma pack(push, 1)
-struct RecordHeader {
+struct RecordHeader 
+{
     char     sig[4];
     uint32_t dataSize;
     uint32_t flags;
@@ -31,7 +32,8 @@ struct RecordHeader {
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct GroupHeader {
+struct GroupHeader 
+{
     char     sig[4];   // "GRUP"
     uint32_t size;
     char     label[4];
@@ -42,7 +44,8 @@ struct GroupHeader {
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct SubRecordHeader {
+struct SubRecordHeader 
+{
     char sig[4];
     uint16_t size;
 };
@@ -51,13 +54,16 @@ struct SubRecordHeader {
 constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
 
 // ===== Record Filter Configuration =====
-class RecordFilter {
-public:
-    void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) {
+class RecordFilter 
+{
+    public:
+    void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) 
+    {
         std::string sig = recordType.substr(0, 4);
         recordTypes_.insert(sig);
 
-        for (size_t i = 0; i < subRecords.size(); ++i) {
+        for (size_t i = 0; i < subRecords.size(); ++i) 
+        {
             std::string subSig = subRecords[i].substr(0, 4);
             subRecordFilters_[sig].insert(subSig);
         }
@@ -68,14 +74,16 @@ public:
         return recordTypes_.count(std::string(sig, 4)) > 0;
     }
 
-    bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const {
+    bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const 
+    {
         auto it = subRecordFilters_.find(std::string(recordSig, 4));
         if (it == subRecordFilters_.end()) return false; 
 
         const std::unordered_set<std::string>& subs = it->second;
         if (subs.empty()) return true; 
 
-        for (const auto& s : subs) {
+        for (const auto& s : subs) 
+        {
             if (std::strncmp(s.c_str(), subSig, 4) == 0) return true;
         }
 
@@ -87,16 +95,18 @@ public:
     {
         CurrentConfig = config;
         for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = config.begin();
-            it != config.end(); ++it) {
+            it != config.end(); ++it) 
+        {
             AddRecordType(it->first, it->second);
         }
     }
 
-    bool IsEnabled() const {
+    bool IsEnabled() const 
+    {
         return !recordTypes_.empty();
     }
 
-private:
+    private:
     std::unordered_set<std::string> recordTypes_;
     std::unordered_map<std::string, std::unordered_set<std::string>> subRecordFilters_;
 };
@@ -120,11 +130,13 @@ void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
     const RecordFilter& filter, const char recordSig[4])
 {
     size_t offset = 0;
-    while (offset + sizeof(SubRecordHeader) <= dataSize) {
+    while (offset + sizeof(SubRecordHeader) <= dataSize) 
+    {
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
         if (offset + sizeof(SubRecordHeader) + sub->size > dataSize) break;
 
-        if (filter.ShouldParseSubRecord(recordSig, sub->sig)) {
+        if (filter.ShouldParseSubRecord(recordSig, sub->sig)) 
+        {
             rec.AddSubRecord(sub->sig, data + offset + sizeof(SubRecordHeader), sub->size);
         }
 
@@ -137,8 +149,10 @@ void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec
     const RecordFilter& filter, const char recordSig[4])
 {
     uint32_t bytesRead = 0;
-    while (bytesRead < recordSize && f.good()) {
-        if (bytesRead + sizeof(SubRecordHeader) > recordSize) {
+    while (bytesRead < recordSize && f.good()) 
+    {
+        if (bytesRead + sizeof(SubRecordHeader) > recordSize) 
+        {
             f.seekg(recordSize - bytesRead, std::ios::cur);
             break;
         }
@@ -147,18 +161,21 @@ void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec
         if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
         bytesRead += sizeof(SubRecordHeader);
 
-        if (bytesRead + sub.size > recordSize) {
+        if (bytesRead + sub.size > recordSize) 
+        {
             f.seekg(recordSize - bytesRead, std::ios::cur);
             break;
         }
 
         std::vector<uint8_t> buf(sub.size);
-        if (sub.size > 0) {
+        if (sub.size > 0) 
+        {
             f.read(reinterpret_cast<char*>(buf.data()), sub.size);
             bytesRead += sub.size;
         }
 
-        if (filter.ShouldParseSubRecord(recordSig, sub.sig)) {
+        if (filter.ShouldParseSubRecord(recordSig, sub.sig)) 
+        {
             rec.AddSubRecord(sub.sig, buf.data(), sub.size);
         }
     }
@@ -183,8 +200,10 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
 
     EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
 
-    if (IsCompressed(hdr)) {
-        if (hdr.dataSize < 4) {
+    if (IsCompressed(hdr)) 
+    {
+        if (hdr.dataSize < 4) 
+        {
             f.seekg(hdr.dataSize, std::ios::cur);
             doc.AddRecord(std::move(rec));
             return;
@@ -199,9 +218,12 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
 
         std::vector<uint8_t> decompressed;
         if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
+        {
             ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.sig);
+        }  
     }
-    else {
+    else 
+    {
         ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
     }
 
@@ -211,7 +233,8 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
 // Iterative group parsing with filter
 void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter& filter)
 {
-    struct GroupState {
+    struct GroupState 
+    {
         uint32_t remaining;
     };
     std::stack<GroupState> groupStack;
@@ -235,25 +258,30 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
     while (!groupStack.empty()) {
         auto& state = groupStack.top();
 
-        if (state.remaining == 0) {
+        if (state.remaining == 0) 
+        {
             groupStack.pop();
             continue;
         }
 
-        if (state.remaining < 4) {
+        if (state.remaining < 4) 
+        {
             f.seekg(state.remaining, std::ios::cur);
             groupStack.pop();
             continue;
         }
 
         char sig[4];
-        if (!f.read(sig, 4)) {
+        if (!f.read(sig, 4)) 
+        {
             groupStack.pop();
             continue;
         }
 
-        if (IsGRUP(sig)) {
-            if (state.remaining < 24) {
+        if (IsGRUP(sig)) 
+        {
+            if (state.remaining < 24) 
+            {
                 f.seekg(state.remaining - 4, std::ios::cur);
                 groupStack.pop();
                 continue;
@@ -266,7 +294,8 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
             Read(f, gh.stamp);
             Read(f, gh.unknown);
 
-            if (gh.size < 24 || gh.size > state.remaining) {
+            if (gh.size < 24 || gh.size > state.remaining) 
+            {
                 groupStack.pop();
                 continue;
             }
@@ -277,8 +306,10 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
             state.remaining -= gh.size;
             groupStack.push({ gh.size - 24 });
         }
-        else {
-            if (state.remaining < 24) {
+        else 
+        {
+            if (state.remaining < 24) 
+            {
                 f.seekg(state.remaining - 4, std::ios::cur);
                 groupStack.pop();
                 continue;
@@ -296,7 +327,8 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
 
             uint32_t recordTotalSize = 24 + hdr.dataSize;
 
-            if (recordTotalSize > state.remaining) {
+            if (recordTotalSize > state.remaining) 
+            {
                 groupStack.pop();
                 continue;
             }
@@ -311,11 +343,14 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
             // Now parse the record data
             EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
 
-            if (IsCompressed(hdr)) {
-                if (hdr.dataSize < 4) {
+            if (IsCompressed(hdr)) 
+            {
+                if (hdr.dataSize < 4) 
+                {
                     f.seekg(hdr.dataSize, std::ios::cur);
                 }
-                else {
+                else 
+                {
                     uint32_t uncompressedSize = 0;
                     Read(f, uncompressedSize);
 
@@ -325,10 +360,13 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
 
                     std::vector<uint8_t> decompressed;
                     if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
+                    {
                         ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.sig);
+                    }  
                 }
             }
-            else {
+            else 
+            {
                 ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
             }
 
@@ -349,12 +387,14 @@ int ReadEsp(const char* EspPath, const RecordFilter& filter)
     CurrentDocument = new EspDocument();
 
     std::ifstream f(EspPath, std::ios::binary);
-    if (!f.is_open()) {
+    if (!f.is_open()) 
+    {
         std::cerr << "Failed to open ESP: " << EspPath << "\n";
         return 1;
     }
 
-    while (f.good() && f.peek() != EOF) {
+    while (f.good() && f.peek() != EOF) 
+    {
         char sig[4];
         if (!f.read(sig, 4)) break;
 
@@ -375,7 +415,8 @@ void Init()
 
     // https://github.com/Cutleast/sse-plugin-interface/blob/master/src/sse_plugin_interface/string_records.py#L6-L47 
     //It borrows from the fields available for translation in sseat.
-    std::unordered_map<std::string, std::vector<std::string>> Config = {
+    std::unordered_map<std::string, std::vector<std::string>> Config = 
+    {
        {"ACTI", {"FULL", "RNAM"}},
        {"ALCH", {"FULL"}},
        {"AMMO", {"FULL", "DESC"}},
@@ -434,7 +475,8 @@ void PrintAllRecords()
     if (!CurrentDocument) return;
 
     size_t total = CurrentDocument->records.size();
-    if (total == 0) {
+    if (total == 0) 
+    {
         std::cout << "No records available.\n";
         return;
     }
@@ -442,7 +484,8 @@ void PrintAllRecords()
     std::cout << "\n=== All Records ===\n";
 
     size_t index = 1;
-    for (const auto& rec : CurrentDocument->records) {
+    for (const auto& rec : CurrentDocument->records) 
+    {
         std::cout << "Record " << index++ << ":\n";
         std::cout << "  Sig: " << rec.sig << "\n";
         std::cout << "  FormID: 0x" << std::hex << rec.formID << std::dec << "\n";
@@ -471,7 +514,8 @@ int main()
     const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
 
     std::cout << "Starting ESP parsing with filter...\n";
-    if (TranslateFilter->IsEnabled()) {
+    if (TranslateFilter->IsEnabled()) 
+    {
         std::cout << "Filter is enabled - only specified records will be parsed.\n";
     }
     else {
@@ -586,7 +630,8 @@ std::vector<uint8_t> ModifySubRecords(
     std::unordered_map<std::string, size_t> currentOccurrence;
 
     // Iterate through all subrecords in the original data
-    while (offset + sizeof(SubRecordHeader) <= originalData.size()) {
+    while (offset + sizeof(SubRecordHeader) <= originalData.size()) 
+    {
         SubRecordHeader sh;
         std::memcpy(&sh, originalData.data() + offset, sizeof(sh));
 
@@ -609,15 +654,25 @@ std::vector<uint8_t> ModifySubRecords(
             size_t occurrence = currentOccurrence[subSig]++;
 
             // If we have a modified version for this occurrence, use it
-            if (occurrence < mapIt->second.size()) {
+            if (occurrence < mapIt->second.size()) 
+            {
                 modifiedSub = mapIt->second[occurrence];
                 isModified = true;
             }
         }
 
-        if (isModified && modifiedSub) {
+        if (isModified && modifiedSub) 
+        {
+            if (modifiedSub->data.size() > 0xFFFF)
+            {
+                std::cerr << "Error: Subrecord " << subSig
+                    << " size exceeds 65535 bytes\n";
+                return {};
+            }
+
             // Write the modified subrecord with new data (translation)
             SubRecordHeader newSh = sh;
+
             newSh.size = static_cast<uint16_t>(modifiedSub->data.size());
 
             // Write the subrecord header
@@ -630,7 +685,8 @@ std::vector<uint8_t> ModifySubRecords(
                 modifiedSub->data.begin(),
                 modifiedSub->data.end());
         }
-        else {
+        else 
+        {
             // Preserve the original subrecord exactly as-is
             // This includes subrecords that weren't filtered or weren't modified
             result.insert(result.end(),

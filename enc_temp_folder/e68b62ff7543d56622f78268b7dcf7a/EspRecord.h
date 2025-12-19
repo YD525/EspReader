@@ -252,16 +252,17 @@ class EspRecord
 		subRecords.push_back(std::move(sub));
 	}
 
-	std::string GetStableKey() const
-	{
-		// Sig + 原始 FormID，完全稳定
-		return sig + ":" + std::to_string(formID);
-	}
-
 	// Get EDID (Editor ID) if exists
 	std::string GetEditorID() const 
 	{
-		return GetStableKey();
+		for (const auto& sub : subRecords)
+		{
+			if (sub.sig == "EDID")
+			{
+				return sub.GetString();
+			}
+		}
+		return "";
 	}
 
 	// Get FULL (Display Name) if exists
@@ -313,8 +314,7 @@ class EspRecord
 	std::string GetUniqueKey() const
 	{
 		// For CELL records, use EDID + FormID to avoid conflicts
-		if (IsCell()) 
-		{
+		if (IsCell()) {
 			std::string edid = GetEditorID();
 			if (!edid.empty()) {
 				return sig + ":" + edid + ":" + std::to_string(formID);
