@@ -1,37 +1,53 @@
-MIT License – Dual Author Exception
-==================================
+MIT License with Dual-Author Attribution Exception
+=================================================
 
-This software is licensed under the MIT License with the following
-additional permissions and conditions.
+Copyright (c) 2025
+YD525 (https://github.com/YD525)
+Cutleast (https://github.com/cutleast)
 
 ------------------------------------------------------------
-1. Author Exception
+1. License Grant
 ------------------------------------------------------------
-The original authors, YD525 and Cutleast, as joint copyright holders,
+This software is licensed under the MIT License (the "License"),
+subject to the additional clarifications and exceptions set forth
+below.
+
+Except as expressly stated in this document, all terms of the MIT
+License apply.
+
+------------------------------------------------------------
+2. Dual-Author Attribution Requirement
+------------------------------------------------------------
+Any redistribution of this software, in source or binary form, must
+retain the MIT License text and clearly attribute BOTH original
+authors:
+
+- YD525
+- Cutleast
+
+Such attribution must be reasonably visible and must not remove,
+alter, or obscure existing copyright notices.
+
+------------------------------------------------------------
+3. Author Exception
+------------------------------------------------------------
+YD525 and Cutleast, as the original authors and joint copyright holders,
 are granted unrestricted rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or commercialize this software without any
-attribution requirement or limitation imposed by the MIT License.
+distribute, sublicense, and/or commercialize this software, with or
+without attribution, notwithstanding any attribution requirements
+that may otherwise apply under the MIT License.
 
 ------------------------------------------------------------
-2. Attribution Clarification for Third Parties
-------------------------------------------------------------
-Third-party redistributions of this software, in source or binary form,
-must retain the original MIT License text and clearly attribute BOTH
-original authors, YD525 and Cutleast.
-
-Attribution must include visible reference(s) to:
-- https://github.com/YD525
-- https://github.com/cutleast
-
-------------------------------------------------------------
-3. No Misrepresentation
+4. No Misrepresentation
 ------------------------------------------------------------
 Third parties may not claim authorship of this software, nor imply
-endorsement, maintenance, or responsibility by the original authors
-without explicit written permission.
+endorsement, maintenance, or responsibility by YD525 or Cutleast,
+without explicit prior written permission.
 
 ------------------------------------------------------------
-4. Precedence
+5. Interpretation
 ------------------------------------------------------------
-In the event of conflict, this exception shall take precedence over
-the MIT License text.
+This exception is intended to supplement and clarify the MIT License.
+In the event of ambiguity between this document and the MIT License
+text, this document shall govern the interpretation of the relevant
+provisions.
