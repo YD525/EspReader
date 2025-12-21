@@ -15,6 +15,19 @@
 
 #include <windows.h>
 
+#ifdef SSELexApi_EXPORTS
+#define SSELex_API __declspec(dllexport)
+#else
+#define SSELex_API __declspec(dllimport)
+#endif
+
+extern "C" 
+{
+	SSELex_API void C_Init();
+	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
+	SSELex_API void C_Close();
+}
+
 void Close();
 void ClearDocument();
 
@@ -474,11 +487,12 @@ void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& fil
 	}
 }
 
-std::string LastSetPath;
+std::wstring LastSetPath;
 EspData* Data;
 
 
-int ReadEsp(const char* EspPath, const RecordFilter& Filter)
+
+int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 {
 	ClearDocument();
 	LastSetPath = EspPath;
@@ -508,6 +522,10 @@ int ReadEsp(const char* EspPath, const RecordFilter& Filter)
 	return 0;
 }
 
+int C_ReadEsp(const wchar_t* EspPath)
+{
+	return ReadEsp(EspPath, *TranslateFilter);
+}
 
 void Init()
 {
@@ -577,45 +595,76 @@ void GetCanTransCount()
 }
 
 
+BOOL APIENTRY DllMain(HMODULE hModule,
+	DWORD  ul_reason_for_call,
+	LPVOID lpReserved)
+{
+	switch (ul_reason_for_call)
+	{
+	case DLL_PROCESS_ATTACH:
+		break;
+	case DLL_THREAD_ATTACH:
+		break;
+	case DLL_THREAD_DETACH:
+		break;
+	case DLL_PROCESS_DETACH:
+		break;
+	}
+	return TRUE;
+}
+
+void C_Init()
+{
+	Init();
+}
+
+void C_Close()
+{
+	Close();
+}
+
 int main()
 {
-	SetConsoleOutputCP(CP_UTF8);
+	//SetConsoleOutputCP(CP_UTF8);
 
-	Init();
+	//Init();
 
-	const char* EspPath = "C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
+	//const wchar_t* EspPath = TEXT("C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp");
 
-	std::cout << "Starting ESP parsing with filter...\n";
-	if (TranslateFilter->IsEnabled())
-	{
-		std::cout << "Filter is enabled - only specified records will be parsed.\n";
-	}
-	else {
-		std::cout << "Filter is disabled - all records will be parsed.\n";
-	}
+	//std::cout << "Starting ESP parsing with filter...\n";
+	//if (TranslateFilter->IsEnabled())
+	//{
+	//	std::cout << "Filter is enabled - only specified records will be parsed.\n";
+	//}
+	//else {
+	//	std::cout << "Filter is disabled - all records will be parsed.\n";
+	//}
 
-	int state = ReadEsp(EspPath, *TranslateFilter);
+	//int state = ReadEsp(EspPath, *TranslateFilter);
 
-	if (state == 0)
-	{
-		std::cout << "Finished reading ESP.\n";
-		std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
+	//if (state == 0)
+	//{
+	//	std::cout << "Finished reading ESP.\n";
+	//	std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
 
-		// Print statistics
-		Data->PrintStatistics();
+	//	// Print statistics
+	//	Data->PrintStatistics();
 
-		GetCanTransCount();
-	}
-	else
-	{
-		std::cerr << "Failed to read ESP\n";
-	}
+	//	//Test Query Cells
+	//	std::cout << "CellCount: " << Data->SearchBySig("CELL").size() << "\n\n";
 
-	Close();
+	//	GetCanTransCount();
+	//}
+	//else
+	//{
+	//	std::cerr << "Failed to read ESP\n";
+	//}
 
-	WaitForExit();
+	//Close();
 
-	return 0;
+	//WaitForExit();
+
+	//return 0;
 }
 
 const EspRecord* GetRecord(char* Key)
@@ -643,7 +692,7 @@ void ClearDocument()
 	delete Data;
 	Data = nullptr;
 
-	LastSetPath = "";
+	LastSetPath = TEXT("");
 }
 
 
@@ -997,26 +1046,26 @@ bool SaveEsp(const char* SavePath)
 {
 	if (LastSetPath.empty())
 	{
-		std::cerr << "Error: No source ESP file path set\n";
+		//std::cerr << "Error: No source ESP file path set\n";
 		return false;
 	}
 
 	std::ifstream Fin(LastSetPath, std::ios::binary);
 	if (!Fin.is_open())
 	{
-		std::cerr << "Error: Cannot open source ESP file: " << LastSetPath << "\n";
+		//std::cerr << "Error: Cannot open source ESP file: " << LastSetPath << "\n";
 		return false;
 	}
 
 	std::ofstream Fout(SavePath, std::ios::binary);
 	if (!Fout.is_open())
 	{
-		std::cerr << "Error: Cannot create output ESP file: " << SavePath << "\n";
+		//std::cerr << "Error: Cannot create output ESP file: " << SavePath << "\n";
 		Fin.close();
 		return false;
 	}
 
-	std::cout << "Processing: " << LastSetPath << " -> " << SavePath << "\n";
+	//std::cout << "Processing: " << LastSetPath << " -> " << SavePath << "\n";
 
 	bool Success = ProcessFileContent(Fin, Fout, -1);
 

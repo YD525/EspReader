@@ -446,6 +446,43 @@ class EspData
 
 	EspData() : GrupCount(0), HasTES4Header(false) {}
 
+	std::vector<EspRecord> SearchBySig(const std::string& ParentSig, const std::string& ChildSig = "") const
+	{
+		std::vector<EspRecord> Matches;
+
+		auto MatchesRecord = [&](const EspRecord& Rec) -> bool {
+			
+			if (Rec.Sig != ParentSig)
+				return false;
+
+			
+			if (ChildSig.empty())
+				return true;
+
+			
+			for (const auto& Sub : Rec.SubRecords)
+			{
+				if (Sub.Sig == ChildSig)
+					return true;
+			}
+			return false;
+			};
+
+		for (const auto& Rec : Records)
+		{
+			if (MatchesRecord(Rec))
+				Matches.push_back(Rec);
+		}
+
+		for (const auto& Rec : CellRecords)
+		{
+			if (MatchesRecord(Rec))
+				Matches.push_back(Rec);
+		}
+
+		return Matches;
+	}
+
 	std::vector<EspRecord> SearchByUniqueKey(const std::string& UniqueKey) const
 	{
 		std::vector<EspRecord> Matches;
