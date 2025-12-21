@@ -10,6 +10,65 @@
 #include "TextHelper.h"
 #include "StringsFileHelper.h"
 
+// ===== Record Filter Configuration =====
+class RecordFilter
+{
+public:
+	bool AllowAll;
+	RecordFilter() : AllowAll(false) {}
+	void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords)
+	{
+		std::string sig = recordType.substr(0, 4);
+		RecordTypes_.insert(sig);
+
+		for (size_t i = 0; i < subRecords.size(); ++i)
+		{
+			std::string subSig = subRecords[i].substr(0, 4);
+			SubRecordFilters_[sig].insert(subSig);
+		}
+	}
+
+	bool ShouldParseRecordWithSub(const std::string& ParentSig, const std::string& ChildSig) const
+	{
+		if (AllowAll) return true;
+
+		auto it = SubRecordFilters_.find(ParentSig);
+		if (it == SubRecordFilters_.end())
+			return false;
+
+		if (ChildSig.empty())
+			return true;
+
+		const std::unordered_set<std::string>& requiredSubs = it->second;
+
+		if (requiredSubs.empty())
+			return true;
+
+		return requiredSubs.count(ChildSig) > 0;
+	}
+
+	std::unordered_map<std::string, std::vector<std::string>> CurrentConfig;
+	void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& Config)
+	{
+		CurrentConfig = Config;
+		for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = Config.begin();
+			it != Config.end(); ++it)
+		{
+			AddRecordType(it->first, it->second);
+		}
+	}
+
+	bool IsEnabled() const
+	{
+		return !RecordTypes_.empty();
+	}
+
+private:
+	std::unordered_set<std::string> RecordTypes_;
+	std::unordered_map<std::string, std::unordered_set<std::string>> SubRecordFilters_;
+};
+
+
 // Global strings manager - shared by all records
 extern StringsManager* g_StringsManager;
 
@@ -278,7 +337,7 @@ public:
 		return false;
 	}
 
-	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size)
+	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size,RecordFilter& Filter)
 	{
 		SubRecordData Sub;
 		Sub.Sig = std::string(Str, 4);
@@ -302,7 +361,10 @@ public:
 			}
 		}
 
-		SubRecords.push_back(Sub);
+		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
+		{
+			SubRecords.push_back(Sub);
+		}
 	}
 
 	std::vector<std::pair<std::string, std::string> > GetSubRecordValues(
@@ -484,7 +546,7 @@ class EspData
 		return Count;
 	}
 
-	void AddRecord(EspRecord& Rec)
+	void AddRecord(EspRecord& Rec, RecordFilter& Filter)
 	{
 		const size_t Index = Records.size();
 		const std::string UniqueKey = Rec.GetUniqueKey();
@@ -524,7 +586,10 @@ class EspData
 			}
 		}
 
-		Records.push_back(Rec);
+		if (Filter.ShouldParseRecordWithSub(Rec.Sig,""))
+		{
+			Records.push_back(Rec);
+		}
 	}
 
 	void IncrementGrupCount()
