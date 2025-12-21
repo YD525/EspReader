@@ -129,6 +129,7 @@
   <ItemGroup>
     <ClCompile Include="EspReader.cpp" />
     <ClCompile Include="miniz.c" />
+    <ClCompile Include="StringsFileHelper.h" />
     <ClCompile Include="TextHelper.cpp" />
   </ItemGroup>
   <ItemGroup>

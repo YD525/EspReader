@@ -8,15 +8,17 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "TextHelper.h"
+#include "StringsFileHelper.h"
 
+// Global strings manager - shared by all records
+extern StringsManager* g_StringsManager;
 
-// Convert Windows-1252 bytes to UTF-8 string
-inline std::string Windows1252ToUTF8(const uint8_t* data, size_t size) 
+inline std::string Windows1252ToUTF8(const uint8_t* Data, size_t Size)
 {
-	std::string result;
-	result.reserve(size * 2); // UTF-8 may be longer
+	std::string Result;
+	Result.reserve(Size * 2);
 
-	static const uint16_t cp1252_table[32] = 
+	static const uint16_t CP1252_TABLE[32] =
 	{
 		0x20AC,0x0081,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,
 		0x02C6,0x2030,0x0160,0x2039,0x0152,0x008D,0x017D,0x008F,
@@ -24,66 +26,60 @@ inline std::string Windows1252ToUTF8(const uint8_t* data, size_t size)
 		0x02DC,0x2122,0x0161,0x203A,0x0153,0x009D,0x017E,0x0178
 	};
 
-	for (size_t i = 0; i < size; ++i) 
+	for (size_t i = 0; i < Size; ++i)
 	{
-		uint8_t c = data[i];
-		if (c == 0) break; // Null terminator
+		uint8_t C = Data[i];
+		if (C == 0) break;
 
-		if (c < 0x80) 
+		if (C < 0x80)
 		{
-			result += static_cast<char>(c);
+			Result += static_cast<char>(C);
 		}
-		else 
-		if (c >= 0x80 && c <= 0x9F) 
+		else if (C >= 0x80 && C <= 0x9F)
 		{
-			uint16_t unicode = cp1252_table[c - 0x80];
-			if (unicode < 0x800) 
+			uint16_t Unicode = CP1252_TABLE[C - 0x80];
+			if (Unicode < 0x800)
 			{
-				result += static_cast<char>(0xC0 | (unicode >> 6));
-				result += static_cast<char>(0x80 | (unicode & 0x3F));
+				Result += static_cast<char>(0xC0 | (Unicode >> 6));
+				Result += static_cast<char>(0x80 | (Unicode & 0x3F));
 			}
-			else 
+			else
 			{
-				result += static_cast<char>(0xE0 | (unicode >> 12));
-				result += static_cast<char>(0x80 | ((unicode >> 6) & 0x3F));
-				result += static_cast<char>(0x80 | (unicode & 0x3F));
+				Result += static_cast<char>(0xE0 | (Unicode >> 12));
+				Result += static_cast<char>(0x80 | ((Unicode >> 6) & 0x3F));
+				Result += static_cast<char>(0x80 | (Unicode & 0x3F));
 			}
 		}
-		else 
-		{ 
-			// 0xA0-0xFF
-			result += static_cast<char>(0xC0 | (c >> 6));
-			result += static_cast<char>(0x80 | (c & 0x3F));
+		else
+		{
+			Result += static_cast<char>(0xC0 | (C >> 6));
+			Result += static_cast<char>(0x80 | (C & 0x3F));
 		}
 	}
 
-	return result;
+	return Result;
 }
 
-// Check if data is likely UTF-8
-inline bool IsLikelyUTF8(const uint8_t* data, size_t size) 
+inline bool IsLikelyUTF8(const uint8_t* Data, size_t Size)
 {
-	for (size_t i = 0; i < size && data[i] != 0; ++i) 
+	for (size_t i = 0; i < Size && Data[i] != 0; ++i)
 	{
-		uint8_t c = data[i];
-		if (c >= 0x80) 
+		uint8_t C = Data[i];
+		if (C >= 0x80)
 		{
-			if ((c & 0xE0) == 0xC0) 
-			{ 
-				// 2-byte
-				if (i + 1 >= size || (data[i + 1] & 0xC0) != 0x80) return false;
+			if ((C & 0xE0) == 0xC0)
+			{
+				if (i + 1 >= Size || (Data[i + 1] & 0xC0) != 0x80) return false;
 				i++;
 			}
-			else if ((c & 0xF0) == 0xE0) 
-			{ 
-				// 3-byte
-				if (i + 2 >= size || (data[i + 1] & 0xC0) != 0x80 || (data[i + 2] & 0xC0) != 0x80) return false;
+			else if ((C & 0xF0) == 0xE0)
+			{
+				if (i + 2 >= Size || (Data[i + 1] & 0xC0) != 0x80 || (Data[i + 2] & 0xC0) != 0x80) return false;
 				i += 2;
 			}
-			else if ((c & 0xF8) == 0xF0) 
-			{ 
-				// 4-byte
-				if (i + 3 >= size || (data[i + 1] & 0xC0) != 0x80 || (data[i + 2] & 0xC0) != 0x80 || (data[i + 3] & 0xC0) != 0x80) return false;
+			else if ((C & 0xF8) == 0xF0)
+			{
+				if (i + 3 >= Size || (Data[i + 1] & 0xC0) != 0x80 || (Data[i + 2] & 0xC0) != 0x80 || (Data[i + 3] & 0xC0) != 0x80) return false;
 				i += 3;
 			}
 			else
@@ -95,11 +91,10 @@ inline bool IsLikelyUTF8(const uint8_t* data, size_t size)
 	return true;
 }
 
-// ---------------- RawString ----------------
-class RawString 
+class RawString
 {
-	public:
-	enum class StrType 
+public:
+	enum StrType
 	{
 		Char,
 		WChar,
@@ -112,149 +107,168 @@ class RawString
 		List
 	};
 
-	std::string data;     // UTF-8
-	std::string encoding; // Original encoding info
+	std::string Data;
+	std::string Encoding;
 
-	RawString() = default;
-	RawString(const std::string& str, const std::string& enc = "utf8")
-		: data(str), encoding(enc) 
+	RawString() {}
+	RawString(const std::string& Str, const std::string& Enc = "utf8")
+		: Data(Str), Encoding(Enc)
 	{
 	}
 
-	// Parse bytes into RawString according to type
-	static RawString Parse(const uint8_t* bytes, size_t size, StrType type) 
+	static RawString Parse(const uint8_t* Bytes, size_t Size, StrType Type)
 	{
-		switch (type)
+		switch (Type)
 		{
-			case StrType::Char:
+		case Char:
+		{
+			return RawString(std::string(reinterpret_cast<const char*>(Bytes), 1));
+		}
+		case WChar:
+		case WString:
+		case WZString:
+		{
+			if (Size < 2) return RawString("");
+			std::string Utf8;
+			for (size_t i = 0; i + 1 < Size; i += 2)
 			{
-				return RawString(std::string(reinterpret_cast<const char*>(bytes), 1));
-			}	
-			case StrType::WChar:
-			case StrType::WString:
-			case StrType::WZString:
-			{
-				if (size < 2) return RawString("");
-				std::string utf8;
-				for (size_t i = 0; i + 1 < size; i += 2)
+				uint16_t WC;
+				std::memcpy(&WC, Bytes + i, 2);
+				if (WC == 0) break;
+				if (WC < 0x80)
 				{
-					uint16_t wc;
-					std::memcpy(&wc, bytes + i, 2);
-					if (wc == 0) break;
-					if (wc < 0x80) utf8 += static_cast<char>(wc);
-					else
-					{
-						if (wc < 0x800)
-						{
-							utf8 += static_cast<char>(0xC0 | (wc >> 6));
-							utf8 += static_cast<char>(0x80 | (wc & 0x3F));
-						}
-						else
-						{
-							utf8 += static_cast<char>(0xE0 | (wc >> 12));
-							utf8 += static_cast<char>(0x80 | ((wc >> 6) & 0x3F));
-							utf8 += static_cast<char>(0x80 | (wc & 0x3F));
-						}
-					}	
-				}
-				return RawString(utf8);
-			}
-			case StrType::BString:
-			case StrType::BZString:
-			case StrType::ZString:
-			case StrType::String:
-			default:
-			{
-				if (IsLikelyUTF8(bytes, size))
-				{
-					return RawString(std::string(reinterpret_cast<const char*>(bytes), size));
+					Utf8 += static_cast<char>(WC);
 				}
 				else
 				{
-					return RawString(Windows1252ToUTF8(bytes, size));
+					if (WC < 0x800)
+					{
+						Utf8 += static_cast<char>(0xC0 | (WC >> 6));
+						Utf8 += static_cast<char>(0x80 | (WC & 0x3F));
+					}
+					else
+					{
+						Utf8 += static_cast<char>(0xE0 | (WC >> 12));
+						Utf8 += static_cast<char>(0x80 | ((WC >> 6) & 0x3F));
+						Utf8 += static_cast<char>(0x80 | (WC & 0x3F));
+					}
 				}
-			}	
+			}
+			return RawString(Utf8);
+		}
+		case BString:
+		case BZString:
+		case ZString:
+		case String:
+		default:
+		{
+			if (IsLikelyUTF8(Bytes, Size))
+			{
+				return RawString(std::string(reinterpret_cast<const char*>(Bytes), Size));
+			}
+			else
+			{
+				return RawString(Windows1252ToUTF8(Bytes, Size));
+			}
+		}
 		}
 	}
 
-	static RawString FromBytes(const std::vector<uint8_t>& bytes, StrType type = StrType::String) 
+	static RawString FromBytes(const std::vector<uint8_t>& Bytes, StrType Type = String)
 	{
-		return Parse(bytes.data(), bytes.size(), type);
+		return Parse(Bytes.data(), Bytes.size(), Type);
 	}
 
-	std::string ToUTF8String() const { return data; }
+	std::string ToUTF8String() const { return Data; }
 
-	std::vector<uint8_t> Dump(StrType type) const
+	std::vector<uint8_t> Dump(StrType Type) const
 	{
-		switch (type) 
+		switch (Type)
 		{
-			case StrType::Char:
-			case StrType::String:
-			{
-				return std::vector<uint8_t>(data.begin(), data.end());
-			}
-			
-			case StrType::BZString: 
-			{
-				std::vector<uint8_t> result;
-				result.push_back(static_cast<uint8_t>(data.size()));
-				result.insert(result.end(), data.begin(), data.end());
-				result.push_back(0);
-				return result;
-			}
-			default:
-			{
-				throw std::runtime_error("Dump not implemented for this type");
-			}
+		case Char:
+		case String:
+		{
+			return std::vector<uint8_t>(Data.begin(), Data.end());
+		}
+		case BZString:
+		{
+			std::vector<uint8_t> Result;
+			Result.push_back(static_cast<uint8_t>(Data.size()));
+			Result.insert(Result.end(), Data.begin(), Data.end());
+			Result.push_back(0);
+			return Result;
+		}
+		default:
+		{
+			throw std::runtime_error("Dump not implemented for this type");
+		}
 		}
 	}
 };
-
-
-
-
-//https://github.com/Cutleast/sse-plugin-interface/blob/master/src%2Fsse_plugin_interface%2Fdatatypes.py#L209-L233
-//I'll just use the Cutleast class~
 
 struct SubRecordData
 {
 	std::string Sig;
 	std::vector<uint8_t> Data;
+	bool IsLocalized;
+	uint32_t StringID;
 
-	// Get string data with proper encoding
+	SubRecordData() : IsLocalized(false), StringID(0) {}
+
 	std::string GetString() const
 	{
 		if (Data.empty()) return "";
 
-		//Using SSEAT~ RawString
+		if (IsLocalized)
+		{
+			if (g_StringsManager && g_StringsManager->HasString(StringID))
+			{
+				return g_StringsManager->GetString(StringID);
+			}
+			return "<StringID:" + std::to_string(StringID) + ">";
+		}
+
+		return RawString::FromBytes(Data).ToUTF8String();
+	}
+
+	std::string GetRawString() const
+	{
+		if (Data.empty()) return "";
 		return RawString::FromBytes(Data).ToUTF8String();
 	}
 };
 
-class EspRecord 
+class EspRecord
 {
-	public:
+public:
 	std::string Sig;
 	uint32_t FormID;
 	uint32_t Flags;
 	std::vector<SubRecordData> SubRecords;
 
-	EspRecord(const char* s, uint32_t fID, uint32_t fl)
-		: Sig(s, 4), FormID(fID), Flags(fl)
+	EspRecord(const char* S, uint32_t FID, uint32_t FL)
+		: Sig(S, 4), FormID(FID), Flags(FL)
 	{
 	}
 
 	bool CanTranslate() const
 	{
-		for (const auto& Sub : SubRecords)
+		for (size_t i = 0; i < SubRecords.size(); ++i)
 		{
+			const SubRecordData& Sub = SubRecords[i];
 			if (!Sub.Data.empty())
 			{
-				std::string Text = Sub.GetString();
-
-				if (!Text.empty())
+				if (Sub.IsLocalized)
 				{
-					if (HasVisibleText(Text))
+					if (Sub.StringID != 0)
+					{
+						return true;
+					}
+				}
+				else
+				{
+					std::string Text = Sub.GetString();
+					if (!Text.empty() && HasVisibleText(Text))
 					{
 						return true;
 					}
@@ -264,42 +278,60 @@ class EspRecord
 		return false;
 	}
 
-	void AddSubRecord(const char* Str, const uint8_t* Data, size_t Size)
+	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size)
 	{
-		SubRecordData sub;
-		sub.Sig = std::string(Str, 4);
-		if (Data && Size > 0)
-			sub.Data.assign(Data, Data + Size);
-		SubRecords.push_back(std::move(sub));
-	}
+		SubRecordData Sub;
+		Sub.Sig = std::string(Str, 4);
 
-	std::vector<std::pair<std::string, std::string>> GetSubRecordValues(
-		const std::unordered_map<std::string, std::vector<std::string>>& recordSubMap) const
-	{
-		std::vector<std::pair<std::string, std::string>> results;
-
-		auto it = recordSubMap.find(Sig);
-		if (it == recordSubMap.end())
+		if (DataPtr && Size > 0)
 		{
-			return results;
+			Sub.Data.assign(DataPtr, DataPtr + Size);
+
+			// Check if localized field
+			if (g_StringsManager &&
+				StringsManager::IsLocalized(Flags) &&
+				StringsManager::IsLocalizedField(Sub.Sig))
+			{
+				Sub.IsLocalized = true;
+				Sub.StringID = StringsManager::GetStringID(DataPtr, Size);
+			}
+			else
+			{
+				Sub.IsLocalized = false;
+				Sub.StringID = 0;
+			}
 		}
 
-		for (const auto& subSig : it->second)
+		SubRecords.push_back(Sub);
+	}
+
+	std::vector<std::pair<std::string, std::string> > GetSubRecordValues(
+		const std::unordered_map<std::string, std::vector<std::string> >& RecordSubMap) const
+	{
+		std::vector<std::pair<std::string, std::string> > Results;
+
+		std::unordered_map<std::string, std::vector<std::string> >::const_iterator It = RecordSubMap.find(Sig);
+		if (It == RecordSubMap.end())
 		{
-			for (const auto& sub : SubRecords)
+			return Results;
+		}
+
+		for (size_t i = 0; i < It->second.size(); ++i)
+		{
+			const std::string& SubSig = It->second[i];
+			for (size_t j = 0; j < SubRecords.size(); ++j)
 			{
-				if (sub.Sig == subSig)
+				if (SubRecords[j].Sig == SubSig)
 				{
-					results.emplace_back(sub.Sig, sub.GetString());
+					Results.push_back(std::make_pair(SubRecords[j].Sig, SubRecords[j].GetString()));
 					break;
 				}
 			}
 		}
 
-		return results;
+		return Results;
 	}
 
-	// Check if this is a CELL record
 	bool IsCell() const
 	{
 		return Sig == "CELL";
@@ -307,8 +339,31 @@ class EspRecord
 
 	std::string GetUniqueKey() const
 	{
-		// For other records, FormID should be unique
 		return Sig + ":" + std::to_string(FormID);
+	}
+
+	std::string GetEditorID() const
+	{
+		for (size_t i = 0; i < SubRecords.size(); ++i)
+		{
+			if (SubRecords[i].Sig == "EDID" && !SubRecords[i].IsLocalized)
+			{
+				return SubRecords[i].GetString();
+			}
+		}
+		return "";
+	}
+
+	std::string GetDisplayName() const
+	{
+		for (size_t i = 0; i < SubRecords.size(); ++i)
+		{
+			if (SubRecords[i].Sig == "FULL")
+			{
+				return SubRecords[i].GetString();
+			}
+		}
+		return GetEditorID();
 	}
 };
 
@@ -318,17 +373,121 @@ class EspData
 	std::vector<EspRecord> Records;
 	std::unordered_map<std::string, size_t> RecordIndex;
 	std::unordered_set<uint32_t> FormIDs;
-	std::unordered_map<std::string, std::vector<size_t>> CellRecords;
+
+	// CELL storage
+	std::vector<EspRecord> CellRecords;
+	std::unordered_map<uint32_t, size_t> CellByFormID;
+	std::unordered_map<std::string, size_t> CellByEditorID;
+
 	size_t GrupCount;
 	bool HasTES4Header;
 
 	EspData() : GrupCount(0), HasTES4Header(false) {}
 
-
-	void AddRecord(EspRecord&& rec)
+	std::vector<EspRecord> SearchByUniqueKey(const std::string& UniqueKey) const
 	{
-		const size_t index = Records.size();
-		const std::string UniqueKey = rec.GetUniqueKey();
+		std::vector<EspRecord> Matches;
+
+		for (const auto& Rec : Records)
+		{
+			if (Rec.GetUniqueKey() == UniqueKey)
+			{
+				Matches.push_back(Rec);
+			}
+		}
+
+		for (const auto& Rec : CellRecords)
+		{
+			if (Rec.GetUniqueKey() == UniqueKey)
+			{
+				Matches.push_back(Rec);
+			}
+		}
+
+		return Matches;
+	}
+
+	std::vector<EspRecord> SearchRecords(const std::string& Query, bool ExactMatch = false) const
+	{
+		std::vector<EspRecord> Matches;
+
+		auto MatchesQuery = [&](const std::string& Text) -> bool {
+			if (ExactMatch) {
+				return Text == Query;
+			}
+			else {
+				// Case-insensitive fuzzy search
+				std::string LowerText = Text;
+				std::string LowerQuery = Query;
+
+				std::transform(LowerText.begin(), LowerText.end(), LowerText.begin(), ::tolower);
+				std::transform(LowerQuery.begin(), LowerQuery.end(), LowerQuery.begin(), ::tolower);
+
+				return LowerText.find(LowerQuery) != std::string::npos;
+			}
+			};
+
+		for (const auto& Rec : Records) {
+			for (const auto& Sub : Rec.SubRecords) {
+				std::string Text = Sub.GetString();
+				if (!Text.empty() && MatchesQuery(Text)) {
+					Matches.push_back(Rec);
+					break; 
+				}
+			}
+		}
+
+		for (const auto& Rec : CellRecords) {
+			for (const auto& Sub : Rec.SubRecords) {
+				std::string Text = Sub.GetString();
+				if (!Text.empty() && MatchesQuery(Text)) {
+					Matches.push_back(Rec);
+					break;
+				}
+			}
+		}
+
+		return Matches;
+	}
+
+	size_t GetRecordsSubCount() const
+	{
+		size_t Count = 0;
+		for (const auto& Rec : Records)
+		{
+			for (const auto& Sub : Rec.SubRecords)
+			{
+				std::string Text = Sub.GetString();
+				if (!Text.empty() && HasVisibleText(Text))
+				{
+					Count++;
+				}
+			}
+		}
+		return Count;
+	}
+
+	size_t GetCellRecordsSubCount() const
+	{
+		size_t Count = 0;
+		for (const auto& Rec : CellRecords)
+		{
+			for (const auto& Sub : Rec.SubRecords)
+			{
+				std::string Text = Sub.GetString();
+				if (!Text.empty() && HasVisibleText(Text))
+				{
+					Count++;
+				}
+			}
+		}
+		return Count;
+	}
+
+	void AddRecord(EspRecord& Rec)
+	{
+		const size_t Index = Records.size();
+		const std::string UniqueKey = Rec.GetUniqueKey();
 
 		if (RecordIndex.count(UniqueKey))
 		{
@@ -336,27 +495,36 @@ class EspData
 		}
 		else
 		{
-			RecordIndex.emplace(UniqueKey, index);
+			RecordIndex[UniqueKey] = Index;
 		}
 
-		if (rec.Sig == "TES4")
+		if (Rec.Sig == "TES4")
 		{
 			HasTES4Header = true;
 		}
 
-		if (!FormIDs.insert(rec.FormID).second)
+		if (!FormIDs.insert(Rec.FormID).second)
 		{
 			std::cerr << "[Warn] Duplicate FormID 0x"
-				<< std::hex << rec.FormID << std::dec
-				<< " for record " << rec.Sig << "\n";
+				<< std::hex << Rec.FormID << std::dec
+				<< " for record " << Rec.Sig << "\n";
 		}
 
-		if (rec.IsCell())
+		// Special handling for CELL
+		if (Rec.IsCell())
 		{
-			CellRecords[UniqueKey].push_back(index);
+			const size_t CellIndex = CellRecords.size();
+			CellRecords.push_back(Rec);
+			CellByFormID[Rec.FormID] = CellIndex;
+
+			std::string EditorID = Rec.GetEditorID();
+			if (!EditorID.empty())
+			{
+				CellByEditorID[EditorID] = CellIndex;
+			}
 		}
 
-		Records.push_back(std::move(rec));
+		Records.push_back(Rec);
 	}
 
 	void IncrementGrupCount()
@@ -364,18 +532,36 @@ class EspData
 		GrupCount++;
 	}
 
-	// Find Record by Editor ID
-	const EspRecord* FindByUniqueKey(const std::string& key) const
+	const EspRecord* FindByUniqueKey(const std::string& Key) const
 	{
-		for (const auto& rec : Records)
+		for (size_t i = 0; i < Records.size(); ++i)
 		{
-			if (rec.GetUniqueKey() == key)
+			if (Records[i].GetUniqueKey() == Key)
 			{
-				return &rec;
+				return &Records[i];
 			}
 		}
+		return NULL;
+	}
 
-		return nullptr;
+	const EspRecord* FindCellByFormID(uint32_t FormID) const
+	{
+		std::unordered_map<uint32_t, size_t>::const_iterator It = CellByFormID.find(FormID);
+		if (It != CellByFormID.end())
+		{
+			return &CellRecords[It->second];
+		}
+		return NULL;
+	}
+
+	const EspRecord* FindCellByEditorID(const std::string& EditorID) const
+	{
+		std::unordered_map<std::string, size_t>::const_iterator It = CellByEditorID.find(EditorID);
+		if (It != CellByEditorID.end())
+		{
+			return &CellRecords[It->second];
+		}
+		return NULL;
 	}
 
 	size_t GetCount() const
@@ -383,54 +569,29 @@ class EspData
 		return Records.size();
 	}
 
-	// TES5Edit counts Records + GRUPs (excluding TES4 header)
 	size_t GetTotalCount() const
 	{
 		size_t Count = Records.size() + GrupCount;
 		if (HasTES4Header)
 		{
-			Count--; // Exclude TES4 header from count
+			Count--;
 		}
 		return Count;
 	}
 
-	// Print statistics
 	void PrintStatistics() const
 	{
 		std::unordered_map<std::string, size_t> TypeCounts;
-		for (const auto& Rec : Records)
+		for (size_t i = 0; i < Records.size(); ++i)
 		{
-			TypeCounts[Rec.Sig]++;
+			TypeCounts[Records[i].Sig]++;
 		}
 
 		std::cout << "\n=== Record Statistics ===\n";
-		for (const auto& pair : TypeCounts)
+		for (std::unordered_map<std::string, size_t>::const_iterator It = TypeCounts.begin();
+			It != TypeCounts.end(); ++It)
 		{
-			std::cout << pair.first << ": " << pair.second << "\n";
-		}
-		std::cout << "Total Records: " << Records.size() << "\n";
-		std::cout << "Total GRUPs: " << GrupCount << "\n";
-		std::cout << "Total (Records + GRUPs";
-		if (HasTES4Header)
-		{
-			std::cout << ", excluding TES4 header";
-		}
-		std::cout << "): " << GetTotalCount() << "\n";
-
-		// Check for CELL conflicts
-		size_t CellConflicts = 0;
-		for (const auto& CellRecord : CellRecords)
-		{
-			if (CellRecord.second.size() > 1)
-			{
-				CellConflicts++;
-				std::cout << "Warning: CELL '" << CellRecord.first << "' has "
-					<< CellRecord.second.size() << " records\n";
-			}
-		}
-		if (CellConflicts > 0)
-		{
-			std::cout << "Total CELL conflicts: " << CellConflicts << "\n";
+			std::cout << It->first << ": " << It->second << "\n";
 		}
 	}
 };
