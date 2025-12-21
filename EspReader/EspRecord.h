@@ -450,21 +450,22 @@ class EspData
 	{
 		std::vector<EspRecord> Matches;
 
-		auto MatchesRecord = [&](const EspRecord& Rec) -> bool {
-			
-			if (Rec.Sig != ParentSig)
+		auto MatchesRecord = [&](const EspRecord& Rec) -> bool 
+		{
+		
+			if (ParentSig != "ALL" && Rec.Sig != ParentSig)
 				return false;
 
 			
-			if (ChildSig.empty())
+			if (ChildSig.empty() || ChildSig == "ALL")
 				return true;
 
-			
 			for (const auto& Sub : Rec.SubRecords)
 			{
 				if (Sub.Sig == ChildSig)
 					return true;
 			}
+
 			return false;
 			};
 

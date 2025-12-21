@@ -21,10 +21,17 @@
 #define SSELex_API __declspec(dllimport)
 #endif
 
+
 extern "C" 
 {
 	SSELex_API void C_Init();
+	SSELex_API void C_InitDefaultFilter();
+	SSELex_API int C_SetDefaultFilter();//Remember to clear before calling.
+	SSELex_API int C_SetFilter(const char* parentSig, const char** childSigs, int childCount);
+	SSELex_API void C_ClearFilter();
 	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
+	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);//Remember to clone and destroy the record after reading it.
+	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
 	SSELex_API void C_Close();
 }
 
@@ -188,7 +195,6 @@ void ParseRecord(std::ifstream& f, const char Sig[4], EspData& doc, const Record
 	doc.AddRecord(rec, *TranslateFilter);
 }
 
-
 void ParseCellGroup(std::ifstream& f, EspData& doc, const RecordFilter& filter, uint32_t groupSize)
 {
 	uint32_t bytesRead = 0;
@@ -328,7 +334,6 @@ void ParseCellGroup(std::ifstream& f, EspData& doc, const RecordFilter& filter, 
 		f.seekg(groupSize - bytesRead, std::ios::cur);
 	}
 }
-
 
 // Iterative group parsing with filter
 void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& filter)
@@ -490,8 +495,6 @@ void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& fil
 std::wstring LastSetPath;
 EspData* Data;
 
-
-
 int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 {
 	ClearDocument();
@@ -527,59 +530,108 @@ int C_ReadEsp(const wchar_t* EspPath)
 	return ReadEsp(EspPath, *TranslateFilter);
 }
 
+void C_InitDefaultFilter()
+{
+	if (TranslateFilter) delete TranslateFilter;
+	TranslateFilter = new RecordFilter();
+}
+
+void C_ClearFilter()
+{
+	if (TranslateFilter)
+	{
+		TranslateFilter->CurrentConfig.clear();
+	}
+}
+
+static std::string WStringToUtf8(const std::wstring& wstr)
+{
+	if (wstr.empty()) return std::string();
+	int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), NULL, 0, NULL, NULL);
+	std::string result(size_needed, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), &result[0], size_needed, NULL, NULL);
+	return result;
+}
+
+int C_SetDefaultFilter()
+{
+	if (TranslateFilter)
+	{
+		std::unordered_map<std::string, std::vector<std::string>> Config =
+		{
+		   {"ACTI", {"FULL", "RNAM"}},
+		   {"ALCH", {"FULL"}},
+		   {"AMMO", {"FULL", "DESC"}},
+		   {"APPA", {"FULL", "DESC"}},
+		   {"ARMO", {"FULL", "DESC"}},
+		   {"AVIF", {"FULL", "DESC"}},
+		   {"BOOK", {"FULL", "DESC", "CNAM"}},
+		   {"CLAS", {"FULL"}},
+		   {"CELL", {"FULL"}},
+		   {"CONT", {"FULL"}},
+		   {"DIAL", {"FULL"}},
+		   {"DOOR", {"FULL"}},
+		   {"ENCH", {"FULL"}},
+		   {"EXPL", {"FULL"}},
+		   {"FLOR", {"FULL", "RNAM"}},
+		   {"FURN", {"FULL"}},
+		   {"HAZD", {"FULL"}},
+		   {"INFO", {"NAM1", "RNAM"}},
+		   {"INGR", {"FULL"}},
+		   {"KEYM", {"FULL"}},
+		   {"LCTN", {"FULL"}},
+		   {"LIGH", {"FULL"}},
+		   {"LSCR", {"DESC"}},
+		   {"MESG", {"DESC", "FULL", "ITXT"}},
+		   {"MGEF", {"FULL", "DNAM"}},
+		   {"MISC", {"FULL"}},
+		   {"NPC_", {"FULL", "SHRT"}},
+		   {"NOTE", {"FULL", "TNAM"}},
+		   {"PERK", {"FULL", "DESC", "EPF2", "EPFD"}},
+		   {"PROJ", {"FULL"}},
+		   {"QUST", {"FULL", "CNAM", "NNAM"}},
+		   {"RACE", {"FULL", "DESC"}},
+		   {"REFR", {"FULL"}},
+		   {"REGN", {"RDMP"}},
+		   {"SCRL", {"FULL", "DESC"}},
+		   {"SHOU", {"FULL", "DESC"}},
+		   {"SLGM", {"FULL"}},
+		   {"SPEL", {"FULL", "DESC"}},
+		   {"TACT", {"FULL"}},
+		   {"TREE", {"FULL"}},
+		   {"WEAP", {"DESC", "FULL"}},
+		   {"WOOP", {"FULL", "TNAM"}},
+		   {"WRLD", {"FULL"}},
+		};
+
+		TranslateFilter->LoadFromConfig(Config);
+
+		return (int)TranslateFilter->CurrentConfig.size();
+	}
+	
+	return -1;
+}
+
+ int C_SetFilter(const char* ParentSig,const char** ChildSigs,int ChildCount)
+{
+	 if (TranslateFilter)
+	 {
+		 std::string Parent(ParentSig);
+
+		 std::vector<std::string>& Vec = TranslateFilter->CurrentConfig[Parent];
+
+		 for (int i = 0; i < ChildCount; ++i)
+		 {
+			 Vec.push_back(std::string(ChildSigs[i]));
+		 }
+	 }
+	 return -1;
+}
+
+
 void Init()
 {
-	TranslateFilter = new RecordFilter();
 	g_StringsManager = new StringsManager();
-
-	std::unordered_map<std::string, std::vector<std::string>> Config =
-	{
-	   {"ACTI", {"FULL", "RNAM"}},
-	   {"ALCH", {"FULL"}},
-	   {"AMMO", {"FULL", "DESC"}},
-	   {"APPA", {"FULL", "DESC"}},
-	   {"ARMO", {"FULL", "DESC"}},
-	   {"AVIF", {"FULL", "DESC"}},
-	   {"BOOK", {"FULL", "DESC", "CNAM"}},
-	   {"CLAS", {"FULL"}},
-	   {"CELL", {"FULL"}},
-	   {"CONT", {"FULL"}},
-	   {"DIAL", {"FULL"}},
-	   {"DOOR", {"FULL"}},
-	   {"ENCH", {"FULL"}},
-	   {"EXPL", {"FULL"}},
-	   {"FLOR", {"FULL", "RNAM"}},
-	   {"FURN", {"FULL"}},
-	   {"HAZD", {"FULL"}},
-	   {"INFO", {"NAM1", "RNAM"}},
-	   {"INGR", {"FULL"}},
-	   {"KEYM", {"FULL"}},
-	   {"LCTN", {"FULL"}},
-	   {"LIGH", {"FULL"}},
-	   {"LSCR", {"DESC"}},
-	   {"MESG", {"DESC", "FULL", "ITXT"}},
-	   {"MGEF", {"FULL", "DNAM"}},
-	   {"MISC", {"FULL"}},
-	   {"NPC_", {"FULL", "SHRT"}},
-	   {"NOTE", {"FULL", "TNAM"}},
-	   {"PERK", {"FULL", "DESC", "EPF2", "EPFD"}},
-	   {"PROJ", {"FULL"}},
-	   {"QUST", {"FULL", "CNAM", "NNAM"}},
-	   {"RACE", {"FULL", "DESC"}},
-	   {"REFR", {"FULL"}},
-	   {"REGN", {"RDMP"}},
-	   {"SCRL", {"FULL", "DESC"}},
-	   {"SHOU", {"FULL", "DESC"}},
-	   {"SLGM", {"FULL"}},
-	   {"SPEL", {"FULL", "DESC"}},
-	   {"TACT", {"FULL"}},
-	   {"TREE", {"FULL"}},
-	   {"WEAP", {"DESC", "FULL"}},
-	   {"WOOP", {"FULL", "TNAM"}},
-	   {"WRLD", {"FULL"}},
-	};
-
-	TranslateFilter->LoadFromConfig(Config);
 }
 
 void WaitForExit()
@@ -621,6 +673,35 @@ void C_Init()
 void C_Close()
 {
 	Close();
+}
+
+EspRecord** C_SearchBySig(const char* ParentSig,const char* ChildSig,int* OutCount)
+{
+	std::vector<EspRecord> Matches = Data->SearchBySig(ParentSig, ChildSig);
+	*OutCount = static_cast<int>(Matches.size());
+
+	if (Matches.empty())
+		return nullptr;
+
+	EspRecord** Result = new EspRecord * [*OutCount];
+	for (int i = 0; i < *OutCount; ++i)
+	{
+		Result[i] = new EspRecord(Matches[i]);
+	}
+
+	return Result;
+}
+
+void FreeSearchResults(EspRecord** Arr, int Count)
+{
+	if (!Arr) return;
+
+	for (int i = 0; i < Count; ++i)
+	{
+		delete Arr[i];  
+	}
+
+	delete[] Arr; 
 }
 
 int main()
