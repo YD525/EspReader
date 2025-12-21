@@ -57,6 +57,8 @@ constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
 class RecordFilter 
 {
     public:
+    bool AllowAll;
+    RecordFilter() : AllowAll(false) {}
     void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) 
     {
         std::string sig = recordType.substr(0, 4);
@@ -71,11 +73,13 @@ class RecordFilter
 
     bool ShouldParseRecord(const char sig[4]) const 
     {
+        if (AllowAll) return true;
         return RecordTypes_.count(std::string(sig, 4)) > 0;
     }
 
     bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const 
     {
+        if (AllowAll) return true;
         auto it = SubRecordFilters_.find(std::string(recordSig, 4));
         if (it == SubRecordFilters_.end()) return false; 
 
@@ -91,11 +95,11 @@ class RecordFilter
     }
 
     std::unordered_map<std::string, std::vector<std::string>> CurrentConfig;
-    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& config)
+    void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& Config)
     {
-        CurrentConfig = config;
-        for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = config.begin();
-            it != config.end(); ++it) 
+        CurrentConfig = Config;
+        for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = Config.begin();
+            it != Config.end(); ++it) 
         {
             AddRecordType(it->first, it->second);
         }
@@ -352,7 +356,7 @@ void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& fil
             }
 
             // Now parse the record data
-            EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
+            EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
 
             if (IsCompressed(hdr)) 
             {
@@ -372,18 +376,33 @@ void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& fil
                     std::vector<uint8_t> decompressed;
                     if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
                     {
-                        ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.Sig);
+                        ParseSubRecords(decompressed.data(), decompressed.size(), Record, filter, hdr.Sig);
                     }  
                 }
             }
             else 
             {
-                ParseSubRecordsStream(f, hdr.DataSize, rec, filter, hdr.Sig);
+                ParseSubRecordsStream(f, hdr.DataSize, Record, filter, hdr.Sig);
             }
 
-            if (rec.CanTranslate())
+            for (const auto& Sub : Record.SubRecords)
             {
-                doc.AddRecord(std::move(rec));
+                if (!Sub.Data.empty())
+                {
+                    std::string Text = Sub.GetString(); 
+                    if (!Text.empty())
+                    {
+                        if (Text == "Fort Greymoor Prison") 
+                        {
+                            __debugbreak();
+                        }
+                    }
+                }
+            }
+
+            if (Record.CanTranslate())
+            {
+                doc.AddRecord(std::move(Record));
             }
            
             state.remaining -= recordTotalSize;
@@ -480,6 +499,7 @@ void Init()
     };
 
     TranslateFilter->LoadFromConfig(Config);
+    TranslateFilter->AllowAll = TRUE;
 }
 
 void WaitForExit()
@@ -500,6 +520,7 @@ void PrintAllRecords()
 
     std::cout << "\n=== All Records ===\n";
 
+    size_t Total = 0;
     size_t index = 1;
     for (const auto& rec : Data->Records)
     {
@@ -507,19 +528,21 @@ void PrintAllRecords()
         std::cout << "  Sig: " << rec.Sig << "\n";
         std::cout << "  FormID: 0x" << std::hex << rec.FormID << std::dec << "\n";
         std::cout << "  Key: " << rec.GetUniqueKey() << "\n";
-
         auto names = rec.GetSubRecordValues(TranslateFilter->CurrentConfig);
         if (!names.empty()) {
             std::cout << "  SubRecord Values: ";
             for (size_t i = 0; i < names.size(); ++i) {
                 if (i > 0) std::cout << " | ";
                 std::cout << names[i].first << "=" << names[i].second;
+                Total++;
             }
             std::cout << "\n";
         }
 
-        std::cout << "  Total SubRecords: " << rec.SubRecords.size() << "\n\n";
+        std::cout << "SubRecords Count: " << rec.SubRecords.size() << "\n\n";
     }
+
+    std::cout << "  Total Count: " << Total << "\n\n";
 }
 
 int main()
