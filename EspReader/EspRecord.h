@@ -507,6 +507,38 @@ class EspData
 		return Matches;
 	}
 
+	inline std::string WStringToUTF8(const std::wstring& ws)
+	{
+		if (ws.empty())
+			return {};
+
+		int sizeNeeded = WideCharToMultiByte(
+			CP_UTF8,
+			0,
+			ws.c_str(),
+			(int)ws.size(),
+			nullptr,
+			0,
+			nullptr,
+			nullptr
+		);
+
+		std::string result(sizeNeeded, 0);
+
+		WideCharToMultiByte(
+			CP_UTF8,
+			0,
+			ws.c_str(),
+			(int)ws.size(),
+			&result[0],
+			sizeNeeded,
+			nullptr,
+			nullptr
+		);
+
+		return result;
+	}
+
 	std::vector<EspRecord> SearchRecords(const std::string& Query, bool ExactMatch = false) const
 	{
 		std::vector<EspRecord> Matches;
