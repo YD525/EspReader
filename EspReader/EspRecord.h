@@ -243,6 +243,23 @@ class EspRecord
 	{
 	}
 
+	bool CanTranslate() const
+	{
+		for (const auto& Sub : subRecords)
+		{
+			if (!Sub.data.empty())
+			{
+				std::string Text = Sub.GetString();
+
+				if (!Text.empty())
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	void AddSubRecord(const char* s, const uint8_t* data, size_t size)
 	{
 		SubRecordData sub;
@@ -250,19 +267,6 @@ class EspRecord
 		if (data && size > 0)
 			sub.data.assign(data, data + size);
 		subRecords.push_back(std::move(sub));
-	}
-
-	// Get FULL (Display Name) if exists
-	std::string GetFullName() const 
-	{
-		for (const auto& sub : subRecords)
-		{
-			if (sub.sig == "FULL")
-			{
-				return sub.GetString();
-			}
-		}
-		return "";
 	}
 
 	std::vector<std::pair<std::string, std::string>> GetSubRecordValues(

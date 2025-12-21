@@ -4,6 +4,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(133,52): warning C
   miniz.c
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 1557 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 1559 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exe

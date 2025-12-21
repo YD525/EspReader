@@ -381,7 +381,11 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
                 ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
             }
 
-            doc.AddRecord(std::move(rec));
+            if (rec.CanTranslate())
+            {
+                doc.AddRecord(std::move(rec));
+            }
+           
             state.remaining -= recordTotalSize;
         }
     }
