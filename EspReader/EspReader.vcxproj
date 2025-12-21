@@ -129,10 +129,12 @@
   <ItemGroup>
     <ClCompile Include="EspReader.cpp" />
     <ClCompile Include="miniz.c" />
+    <ClCompile Include="TextHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EspRecord.h" />
     <ClInclude Include="miniz.h" />
+    <ClInclude Include="TextHelper.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

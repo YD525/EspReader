@@ -21,33 +21,33 @@ void ClearDocument();
 #pragma pack(push, 1)
 struct RecordHeader 
 {
-    char     sig[4];
-    uint32_t dataSize;
-    uint32_t flags;
-    uint32_t formID;
-    uint32_t versionCtrl;
-    uint16_t version;
-    uint16_t unknown;
+    char     Sig[4];//Offse 0 ~ 3
+    uint32_t DataSize;// 4 ~ 7
+    uint32_t Flags;// 8 ~ 11
+    uint32_t FormID;// 12 ~ 15
+    uint32_t VersionCtrl;// 16 ~ 19
+    uint16_t Version;//20 ~ 21
+    uint16_t Unknown;//22 ~ 23
 };
 #pragma pack(pop)
 
 #pragma pack(push, 1)
 struct GroupHeader 
 {
-    char     sig[4];   // "GRUP"
-    uint32_t size;
-    char     label[4];
-    uint32_t groupType;
-    uint32_t stamp;
-    uint32_t unknown;
+    char     Sig[4];   // "GRUP"
+    uint32_t Size;
+    char     Label[4];
+    uint32_t GroupType;
+    uint32_t Stamp;
+    uint32_t Unknown;
 };
 #pragma pack(pop)
 
 #pragma pack(push, 1)
 struct SubRecordHeader 
 {
-    char sig[4];
-    uint16_t size;
+    char Sig[4];
+    uint16_t Size;
 };
 #pragma pack(pop)
 
@@ -60,31 +60,31 @@ class RecordFilter
     void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords) 
     {
         std::string sig = recordType.substr(0, 4);
-        recordTypes_.insert(sig);
+        RecordTypes_.insert(sig);
 
         for (size_t i = 0; i < subRecords.size(); ++i) 
         {
             std::string subSig = subRecords[i].substr(0, 4);
-            subRecordFilters_[sig].insert(subSig);
+            SubRecordFilters_[sig].insert(subSig);
         }
     }
 
     bool ShouldParseRecord(const char sig[4]) const 
     {
-        return recordTypes_.count(std::string(sig, 4)) > 0;
+        return RecordTypes_.count(std::string(sig, 4)) > 0;
     }
 
     bool ShouldParseSubRecord(const char recordSig[4], const char subSig[4]) const 
     {
-        auto it = subRecordFilters_.find(std::string(recordSig, 4));
-        if (it == subRecordFilters_.end()) return false; 
+        auto it = SubRecordFilters_.find(std::string(recordSig, 4));
+        if (it == SubRecordFilters_.end()) return false; 
 
-        const std::unordered_set<std::string>& subs = it->second;
-        if (subs.empty()) return true; 
+        const std::unordered_set<std::string>& Subs = it->second;
+        if (Subs.empty()) return true; 
 
-        for (const auto& s : subs) 
+        for (const auto& Sub : Subs)
         {
-            if (std::strncmp(s.c_str(), subSig, 4) == 0) return true;
+            if (std::strncmp(Sub.c_str(), subSig, 4) == 0) return true;
         }
 
         return false; 
@@ -103,19 +103,19 @@ class RecordFilter
 
     bool IsEnabled() const 
     {
-        return !recordTypes_.empty();
+        return !RecordTypes_.empty();
     }
 
     private:
-    std::unordered_set<std::string> recordTypes_;
-    std::unordered_map<std::string, std::unordered_set<std::string>> subRecordFilters_;
+    std::unordered_set<std::string> RecordTypes_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> SubRecordFilters_;
 };
 
 // Read helper
 template<typename T>
 inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out), sizeof(T)); }
 inline bool IsGRUP(const char sig[4]) { return std::memcmp(sig, "GRUP", 4) == 0; }
-bool IsCompressed(const RecordHeader& hdr) { return (hdr.flags & RECORD_FLAG_COMPRESSED) != 0; }
+bool IsCompressed(const RecordHeader& hdr) { return (hdr.Flags & RECORD_FLAG_COMPRESSED) != 0; }
 
 // Decompress
 bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out, size_t uncompressedSize)
@@ -144,14 +144,14 @@ void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
     while (offset + sizeof(SubRecordHeader) <= dataSize) 
     {
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
-        if (offset + sizeof(SubRecordHeader) + sub->size > dataSize) break;
+        if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
 
-        if (filter.ShouldParseSubRecord(recordSig, sub->sig)) 
+        if (filter.ShouldParseSubRecord(recordSig, sub->Sig)) 
         {
-            rec.AddSubRecord(sub->sig, data + offset + sizeof(SubRecordHeader), sub->size);
+            rec.AddSubRecord(sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size);
         }
 
-        offset += sizeof(SubRecordHeader) + sub->size;
+        offset += sizeof(SubRecordHeader) + sub->Size;
     }
 }
 
@@ -172,50 +172,50 @@ void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec
         if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
         bytesRead += sizeof(SubRecordHeader);
 
-        if (bytesRead + sub.size > recordSize) 
+        if (bytesRead + sub.Size > recordSize) 
         {
             f.seekg(recordSize - bytesRead, std::ios::cur);
             break;
         }
 
-        std::vector<uint8_t> buf(sub.size);
-        if (sub.size > 0) 
+        std::vector<uint8_t> buf(sub.Size);
+        if (sub.Size > 0) 
         {
-            f.read(reinterpret_cast<char*>(buf.data()), sub.size);
-            bytesRead += sub.size;
+            f.read(reinterpret_cast<char*>(buf.data()), sub.Size);
+            bytesRead += sub.Size;
         }
 
-        if (filter.ShouldParseSubRecord(recordSig, sub.sig)) 
+        if (filter.ShouldParseSubRecord(recordSig, sub.Sig)) 
         {
-            rec.AddSubRecord(sub.sig, buf.data(), sub.size);
+            rec.AddSubRecord(sub.Sig, buf.data(), sub.Size);
         }
     }
 }
 
-void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const RecordFilter& filter)
+void ParseRecord(std::ifstream& f, const char Sig[4], EspData& doc, const RecordFilter& filter)
 {
     RecordHeader hdr{};
-    std::memcpy(hdr.sig, sig, 4);
-    Read(f, hdr.dataSize);
-    Read(f, hdr.flags);
-    Read(f, hdr.formID);
-    Read(f, hdr.versionCtrl);
-    Read(f, hdr.version);
-    Read(f, hdr.unknown);
+    std::memcpy(hdr.Sig, Sig, 4);
+    Read(f, hdr.DataSize);
+    Read(f, hdr.Flags);
+    Read(f, hdr.FormID);
+    Read(f, hdr.VersionCtrl);
+    Read(f, hdr.Version);
+    Read(f, hdr.Unknown);
 
-    if (!filter.ShouldParseRecord(hdr.sig))
+    if (!filter.ShouldParseRecord(hdr.Sig))
     {
-        f.seekg(hdr.dataSize, std::ios::cur);
+        f.seekg(hdr.DataSize, std::ios::cur);
         return;
     }
 
-    EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
+    EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
 
     if (IsCompressed(hdr)) 
     {
-        if (hdr.dataSize < 4) 
+        if (hdr.DataSize < 4) 
         {
-            f.seekg(hdr.dataSize, std::ios::cur);
+            f.seekg(hdr.DataSize, std::ios::cur);
             doc.AddRecord(std::move(rec));
             return;
         }
@@ -223,26 +223,26 @@ void ParseRecord(std::ifstream& f, const char sig[4], EspDocument& doc, const Re
         uint32_t uncompressedSize = 0;
         Read(f, uncompressedSize);
 
-        uint32_t compressedSize = hdr.dataSize - 4;
+        uint32_t compressedSize = hdr.DataSize - 4;
         std::vector<uint8_t> compressed(compressedSize);
         f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
 
         std::vector<uint8_t> decompressed;
         if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
         {
-            ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.sig);
+            ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.Sig);
         }  
     }
     else 
     {
-        ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
+        ParseSubRecordsStream(f, hdr.DataSize, rec, filter, hdr.Sig);
     }
 
     doc.AddRecord(std::move(rec));
 }
 
 // Iterative group parsing with filter
-void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter& filter)
+void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& filter)
 {
     struct GroupState 
     {
@@ -252,19 +252,19 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
 
     // Read rest of GRUP header (sig already read)
     GroupHeader gh{};
-    std::memcpy(gh.sig, "GRUP", 4);
-    Read(f, gh.size);
-    f.read(gh.label, 4);
-    Read(f, gh.groupType);
-    Read(f, gh.stamp);
-    Read(f, gh.unknown);
+    std::memcpy(gh.Sig, "GRUP", 4);
+    Read(f, gh.Size);
+    f.read(gh.Label, 4);
+    Read(f, gh.GroupType);
+    Read(f, gh.Stamp);
+    Read(f, gh.Unknown);
 
-    if (gh.size < 24) return;
+    if (gh.Size < 24) return;
 
     // Count this GRUP
     doc.IncrementGrupCount();
 
-    groupStack.push({ gh.size - 24 });
+    groupStack.push({ gh.Size - 24 });
 
     while (!groupStack.empty()) {
         auto& state = groupStack.top();
@@ -299,13 +299,13 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
             }
 
             // Read rest of nested GRUP header
-            Read(f, gh.size);
-            f.read(gh.label, 4);
-            Read(f, gh.groupType);
-            Read(f, gh.stamp);
-            Read(f, gh.unknown);
+            Read(f, gh.Size);
+            f.read(gh.Label, 4);
+            Read(f, gh.GroupType);
+            Read(f, gh.Stamp);
+            Read(f, gh.Unknown);
 
-            if (gh.size < 24 || gh.size > state.remaining) 
+            if (gh.Size < 24 || gh.Size > state.remaining) 
             {
                 groupStack.pop();
                 continue;
@@ -314,8 +314,8 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
             // Count this nested GRUP
             doc.IncrementGrupCount();
 
-            state.remaining -= gh.size;
-            groupStack.push({ gh.size - 24 });
+            state.remaining -= gh.Size;
+            groupStack.push({ gh.Size - 24 });
         }
         else 
         {
@@ -328,15 +328,15 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
 
             // Parse record header to get size
             RecordHeader hdr{};
-            std::memcpy(hdr.sig, sig, 4);
-            Read(f, hdr.dataSize);
-            Read(f, hdr.flags);
-            Read(f, hdr.formID);
-            Read(f, hdr.versionCtrl);
-            Read(f, hdr.version);
-            Read(f, hdr.unknown);
+            std::memcpy(hdr.Sig, sig, 4);
+            Read(f, hdr.DataSize);
+            Read(f, hdr.Flags);
+            Read(f, hdr.FormID);
+            Read(f, hdr.VersionCtrl);
+            Read(f, hdr.Version);
+            Read(f, hdr.Unknown);
 
-            uint32_t recordTotalSize = 24 + hdr.dataSize;
+            uint32_t recordTotalSize = 24 + hdr.DataSize;
 
             if (recordTotalSize > state.remaining) 
             {
@@ -344,41 +344,41 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
                 continue;
             }
 
-            if (!filter.ShouldParseRecord(hdr.sig))
+            if (!filter.ShouldParseRecord(hdr.Sig))
             {
-                f.seekg(hdr.dataSize, std::ios::cur);
+                f.seekg(hdr.DataSize, std::ios::cur);
                 state.remaining -= recordTotalSize;
                 continue;
             }
 
             // Now parse the record data
-            EspRecord rec(hdr.sig, hdr.formID, hdr.flags);
+            EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
 
             if (IsCompressed(hdr)) 
             {
-                if (hdr.dataSize < 4) 
+                if (hdr.DataSize < 4) 
                 {
-                    f.seekg(hdr.dataSize, std::ios::cur);
+                    f.seekg(hdr.DataSize, std::ios::cur);
                 }
                 else 
                 {
                     uint32_t uncompressedSize = 0;
                     Read(f, uncompressedSize);
 
-                    uint32_t compressedSize = hdr.dataSize - 4;
+                    uint32_t compressedSize = hdr.DataSize - 4;
                     std::vector<uint8_t> compressed(compressedSize);
                     f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
 
                     std::vector<uint8_t> decompressed;
                     if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
                     {
-                        ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.sig);
+                        ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.Sig);
                     }  
                 }
             }
             else 
             {
-                ParseSubRecordsStream(f, hdr.dataSize, rec, filter, hdr.sig);
+                ParseSubRecordsStream(f, hdr.DataSize, rec, filter, hdr.Sig);
             }
 
             if (rec.CanTranslate())
@@ -392,14 +392,14 @@ void ParseGroupIterative(std::ifstream& f, EspDocument& doc, const RecordFilter&
 }
 
 std::string LastSetPath;
-EspDocument* CurrentDocument;
+EspData* Data;
 
 // Read ESP with filter
 int ReadEsp(const char* EspPath, const RecordFilter& filter)
 {
     ClearDocument();//Ensure that nothing goes wrong~
     LastSetPath = EspPath;
-    CurrentDocument = new EspDocument();
+    Data = new EspData();
 
     std::ifstream f(EspPath, std::ios::binary);
     if (!f.is_open()) 
@@ -415,11 +415,11 @@ int ReadEsp(const char* EspPath, const RecordFilter& filter)
 
         if (IsGRUP(sig)) 
         {
-            ParseGroupIterative(f, *CurrentDocument, filter);
+            ParseGroupIterative(f, *Data, filter);
         }
         else 
         {
-            ParseRecord(f, sig, *CurrentDocument, filter);
+            ParseRecord(f, sig, *Data, filter);
         }
     }
     return 0;
@@ -489,9 +489,9 @@ void WaitForExit()
 
 void PrintAllRecords()
 {
-    if (!CurrentDocument) return;
+    if (!Data) return;
 
-    size_t total = CurrentDocument->records.size();
+    size_t total = Data->Records.size();
     if (total == 0) 
     {
         std::cout << "No records available.\n";
@@ -501,11 +501,11 @@ void PrintAllRecords()
     std::cout << "\n=== All Records ===\n";
 
     size_t index = 1;
-    for (const auto& rec : CurrentDocument->records) 
+    for (const auto& rec : Data->Records)
     {
         std::cout << "Record " << index++ << ":\n";
-        std::cout << "  Sig: " << rec.sig << "\n";
-        std::cout << "  FormID: 0x" << std::hex << rec.formID << std::dec << "\n";
+        std::cout << "  Sig: " << rec.Sig << "\n";
+        std::cout << "  FormID: 0x" << std::hex << rec.FormID << std::dec << "\n";
         std::cout << "  Key: " << rec.GetUniqueKey() << "\n";
 
         auto names = rec.GetSubRecordValues(TranslateFilter->CurrentConfig);
@@ -518,7 +518,7 @@ void PrintAllRecords()
             std::cout << "\n";
         }
 
-        std::cout << "  Total SubRecords: " << rec.subRecords.size() << "\n\n";
+        std::cout << "  Total SubRecords: " << rec.SubRecords.size() << "\n\n";
     }
 }
 
@@ -544,10 +544,10 @@ int main()
     if (state == 0) 
     {
         std::cout << "Finished reading ESP.\n";
-        std::cout << "Total records parsed: " << CurrentDocument->GetTotalCount() << "\n";
+        std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
 
         // Print statistics
-        CurrentDocument->PrintStatistics();
+        Data->PrintStatistics();
 
         std::cout << "Print All Records.\n";
         PrintAllRecords();
@@ -571,7 +571,7 @@ const EspRecord* GetRecord(char* Key)
 
     std::string UniqueKey(Key);
 
-    auto Item = CurrentDocument->FindByUniqueKey(UniqueKey);
+    auto Item = Data->FindByUniqueKey(UniqueKey);
 
     return Item;
 }
@@ -586,8 +586,8 @@ void Close()
 
 void ClearDocument()
 {
-    delete CurrentDocument;
-    CurrentDocument = nullptr;
+    delete Data;
+    Data = nullptr;
 
     LastSetPath = "";
 }
@@ -597,16 +597,16 @@ std::vector<uint8_t> ModifySubRecords(
     const std::vector<uint8_t>& originalData,
     EspRecord* modifiedRecord)
 {
-    std::vector<uint8_t> result;
+    std::vector<uint8_t> Result;
     size_t offset = 0;
 
     // Build an index of modified subrecords: signature -> list of SubRecordData pointers
     // This allows us to handle multiple subrecords with the same signature
     std::unordered_map<std::string, std::vector<const SubRecordData*>> modifiedSubsMap;
 
-    for (const auto& sub : modifiedRecord->subRecords)
+    for (const auto& sub : modifiedRecord->SubRecords)
     {
-        modifiedSubsMap[sub.sig].push_back(&sub);
+        modifiedSubsMap[sub.Sig].push_back(&sub);
     }
 
     // Track how many times we've encountered each subrecord signature
@@ -620,14 +620,14 @@ std::vector<uint8_t> ModifySubRecords(
         std::memcpy(&sh, originalData.data() + offset, sizeof(sh));
 
         // Validate that the subrecord doesn't exceed the data bounds
-        if (offset + sizeof(SubRecordHeader) + sh.size > originalData.size())
+        if (offset + sizeof(SubRecordHeader) + sh.Size > originalData.size())
         {
             std::cerr << "Warning: Corrupted subrecord data detected, stopping at offset "
                 << offset << "\n";
             break;
         }
 
-        std::string subSig(sh.sig, 4);
+        std::string subSig(sh.Sig, 4);
 
         // Check if this subrecord signature was modified
         bool isModified = false;
@@ -649,7 +649,7 @@ std::vector<uint8_t> ModifySubRecords(
 
         if (isModified && modifiedSub)
         {
-            if (modifiedSub->data.size() > 0xFFFF)
+            if (modifiedSub->Data.size() > 0xFFFF)
             {
                 std::cerr << "Error: Subrecord " << subSig
                     << " size exceeds 65535 bytes\n";
@@ -659,32 +659,32 @@ std::vector<uint8_t> ModifySubRecords(
             // Write the modified subrecord with new data (translation)
             SubRecordHeader newSh = sh;
 
-            newSh.size = static_cast<uint16_t>(modifiedSub->data.size());
+            newSh.Size = static_cast<uint16_t>(modifiedSub->Data.size());
 
             // Write the subrecord header
-            result.insert(result.end(),
+            Result.insert(Result.end(),
                 reinterpret_cast<uint8_t*>(&newSh),
                 reinterpret_cast<uint8_t*>(&newSh) + sizeof(newSh));
 
             // Write the modified data (UTF-8 translation)
-            result.insert(result.end(),
-                modifiedSub->data.begin(),
-                modifiedSub->data.end());
+            Result.insert(Result.end(),
+                modifiedSub->Data.begin(),
+                modifiedSub->Data.end());
         }
         else
         {
             // Preserve the original subrecord exactly as-is
             // This includes subrecords that weren't filtered or weren't modified
-            result.insert(result.end(),
+            Result.insert(Result.end(),
                 originalData.begin() + offset,
-                originalData.begin() + offset + sizeof(SubRecordHeader) + sh.size);
+                originalData.begin() + offset + sizeof(SubRecordHeader) + sh.Size);
         }
 
         // Move to the next subrecord
-        offset += sizeof(SubRecordHeader) + sh.size;
+        offset += sizeof(SubRecordHeader) + sh.Size;
     }
 
-    return result;
+    return Result;
 }
 
 // Forward declarations
@@ -759,18 +759,18 @@ bool ProcessFileContent(std::ifstream& fin, std::ofstream& fout, int64_t remaini
 bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
 {
     GroupHeader gh{};
-    std::memcpy(gh.sig, sig, 4);
+    std::memcpy(gh.Sig, sig, 4);
 
     // Read GRUP header
-    Read(fin, gh.size);
-    fin.read(gh.label, 4);
-    Read(fin, gh.groupType);
-    Read(fin, gh.stamp);
-    Read(fin, gh.unknown);
+    Read(fin, gh.Size);
+    fin.read(gh.Label, 4);
+    Read(fin, gh.GroupType);
+    Read(fin, gh.Stamp);
+    Read(fin, gh.Unknown);
 
-    if (gh.size < 24)
+    if (gh.Size < 24)
     {
-        std::cerr << "Error: Invalid GRUP size: " << gh.size << "\n";
+        std::cerr << "Error: Invalid GRUP size: " << gh.Size << "\n";
         return false;
     }
 
@@ -782,7 +782,7 @@ bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
     std::streampos grupContentStart = fout.tellp();
 
     // Process GRUP contents recursively
-    int64_t contentSize = gh.size - 24; // 24 = sizeof(GroupHeader)
+    int64_t contentSize = gh.Size - 24; // 24 = sizeof(GroupHeader)
 
     bool success = ProcessGRUPContent(fin, fout, contentSize);
 
@@ -797,7 +797,7 @@ bool ProcessGRUP(std::ifstream& fin, std::ofstream& fout, const char sig[4])
     uint32_t actualGrupSize = actualContentSize + 24;
 
     // If size changed, update GRUP header
-    if (actualGrupSize != gh.size)
+    if (actualGrupSize != gh.Size)
     {
         std::streampos savedPos = fout.tellp();
         fout.seekp(grupHeaderPos + std::streamoff(4)); // Offset to size field
@@ -887,31 +887,31 @@ bool ProcessGRUPContent(std::ifstream& fin, std::ofstream& fout, int64_t content
 bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
 {
     RecordHeader hdr{};
-    std::memcpy(hdr.sig, sig, 4);
+    std::memcpy(hdr.Sig, sig, 4);
 
     // Read all fields of the record header
-    Read(fin, hdr.dataSize);
-    Read(fin, hdr.flags);
-    Read(fin, hdr.formID);
-    Read(fin, hdr.versionCtrl);
-    Read(fin, hdr.version);
-    Read(fin, hdr.unknown);
+    Read(fin, hdr.DataSize);
+    Read(fin, hdr.Flags);
+    Read(fin, hdr.FormID);
+    Read(fin, hdr.VersionCtrl);
+    Read(fin, hdr.Version);
+    Read(fin, hdr.Unknown);
 
     // Build record key
     std::string recordKey(sig, 4);
-    recordKey += ":" + std::to_string(hdr.formID);
+    recordKey += ":" + std::to_string(hdr.FormID);
 
-    auto it = CurrentDocument->recordIndex.find(recordKey);
+    auto it = Data->RecordIndex.find(recordKey);
 
-    if (it != CurrentDocument->recordIndex.end())
+    if (it != Data->RecordIndex.end())
     {
         // Modified record - apply translations
-        EspRecord* rec = &CurrentDocument->records[it->second];
+        EspRecord* Rec = &Data->Records[it->second];
 
-        std::vector<uint8_t> originalData(hdr.dataSize);
-        fin.read(reinterpret_cast<char*>(originalData.data()), hdr.dataSize);
+        std::vector<uint8_t> originalData(hdr.DataSize);
+        fin.read(reinterpret_cast<char*>(originalData.data()), hdr.DataSize);
 
-        std::vector<uint8_t> workingData;
+        std::vector<uint8_t> WorkingData;
         bool wasCompressed = IsCompressed(hdr);
 
         if (wasCompressed)
@@ -921,61 +921,61 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
 
             if (!ZlibDecompress(originalData.data() + 4,
                 originalData.size() - 4,
-                workingData,
+                WorkingData,
                 uncompressedSize))
             {
                 std::cerr << "Error: Decompression failed for " << std::string(sig, 4)
-                    << " FormID 0x" << std::hex << hdr.formID << std::dec << "\n";
+                    << " FormID 0x" << std::hex << hdr.FormID << std::dec << "\n";
                 return false;
             }
         }
         else
         {
-            workingData = originalData;
+            WorkingData = originalData;
         }
 
         // Apply translations
-        workingData = ModifySubRecords(workingData, rec);
+        WorkingData = ModifySubRecords(WorkingData, Rec);
 
         std::vector<uint8_t> finalData;
         if (wasCompressed)
         {
             std::vector<uint8_t> compressed;
-            if (!ZlibCompress(workingData.data(), workingData.size(), compressed))
+            if (!ZlibCompress(WorkingData.data(), WorkingData.size(), compressed))
             {
                 std::cerr << "Error: Compression failed for " << std::string(sig, 4)
-                    << " FormID 0x" << std::hex << hdr.formID << std::dec << "\n";
+                    << " FormID 0x" << std::hex << hdr.FormID << std::dec << "\n";
                 return false;
             }
 
             finalData.resize(4 + compressed.size());
-            uint32_t uncompSize = static_cast<uint32_t>(workingData.size());
+            uint32_t uncompSize = static_cast<uint32_t>(WorkingData.size());
             std::memcpy(finalData.data(), &uncompSize, 4);
             std::memcpy(finalData.data() + 4, compressed.data(), compressed.size());
         }
         else
         {
-            finalData = workingData;
+            finalData = WorkingData;
         }
 
         // Update header with new size
-        hdr.dataSize = static_cast<uint32_t>(finalData.size());
+        hdr.DataSize = static_cast<uint32_t>(finalData.size());
 
         // Write modified record
         fout.write(sig, 4);
-        fout.write(reinterpret_cast<char*>(&hdr.dataSize), sizeof(hdr.dataSize));
-        fout.write(reinterpret_cast<char*>(&hdr.flags), sizeof(hdr.flags));
-        fout.write(reinterpret_cast<char*>(&hdr.formID), sizeof(hdr.formID));
-        fout.write(reinterpret_cast<char*>(&hdr.versionCtrl), sizeof(hdr.versionCtrl));
-        fout.write(reinterpret_cast<char*>(&hdr.version), sizeof(hdr.version));
-        fout.write(reinterpret_cast<char*>(&hdr.unknown), sizeof(hdr.unknown));
+        fout.write(reinterpret_cast<char*>(&hdr.DataSize), sizeof(hdr.DataSize));
+        fout.write(reinterpret_cast<char*>(&hdr.Flags), sizeof(hdr.Flags));
+        fout.write(reinterpret_cast<char*>(&hdr.FormID), sizeof(hdr.FormID));
+        fout.write(reinterpret_cast<char*>(&hdr.VersionCtrl), sizeof(hdr.VersionCtrl));
+        fout.write(reinterpret_cast<char*>(&hdr.Version), sizeof(hdr.Version));
+        fout.write(reinterpret_cast<char*>(&hdr.Unknown), sizeof(hdr.Unknown));
         fout.write(reinterpret_cast<char*>(finalData.data()), finalData.size());
     }
     else
     {
         // FIXED: Byte-perfect copy for unmodified records
         // Read entire record (header + data) as a single block
-        uint32_t totalSize = 24 + hdr.dataSize; // 24 = sizeof(RecordHeader)
+        uint32_t totalSize = 24 + hdr.DataSize; // 24 = sizeof(RecordHeader)
 
         // Allocate buffer for complete record
         std::vector<uint8_t> completeRecord(totalSize);
@@ -984,15 +984,15 @@ bool ProcessRecord(std::ifstream& fin, std::ofstream& fout, const char sig[4])
         std::memcpy(completeRecord.data(), sig, 4);
 
         // Copy header fields (already read)
-        std::memcpy(completeRecord.data() + 4, &hdr.dataSize, sizeof(hdr.dataSize));
-        std::memcpy(completeRecord.data() + 8, &hdr.flags, sizeof(hdr.flags));
-        std::memcpy(completeRecord.data() + 12, &hdr.formID, sizeof(hdr.formID));
-        std::memcpy(completeRecord.data() + 16, &hdr.versionCtrl, sizeof(hdr.versionCtrl));
-        std::memcpy(completeRecord.data() + 20, &hdr.version, sizeof(hdr.version));
-        std::memcpy(completeRecord.data() + 22, &hdr.unknown, sizeof(hdr.unknown));
+        std::memcpy(completeRecord.data() + 4, &hdr.DataSize, sizeof(hdr.DataSize));
+        std::memcpy(completeRecord.data() + 8, &hdr.Flags, sizeof(hdr.Flags));
+        std::memcpy(completeRecord.data() + 12, &hdr.FormID, sizeof(hdr.FormID));
+        std::memcpy(completeRecord.data() + 16, &hdr.VersionCtrl, sizeof(hdr.VersionCtrl));
+        std::memcpy(completeRecord.data() + 20, &hdr.Version, sizeof(hdr.Version));
+        std::memcpy(completeRecord.data() + 22, &hdr.Unknown, sizeof(hdr.Unknown));
 
         // Read record data
-        fin.read(reinterpret_cast<char*>(completeRecord.data() + 24), hdr.dataSize);
+        fin.read(reinterpret_cast<char*>(completeRecord.data() + 24), hdr.DataSize);
 
         // Write entire record as one block - byte-perfect copy
         fout.write(reinterpret_cast<char*>(completeRecord.data()), totalSize);

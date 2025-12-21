@@ -7,6 +7,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <unordered_set>
+#include "TextHelper.h"
 
 
 // Convert Windows-1252 bytes to UTF-8 string
@@ -217,56 +218,59 @@ class RawString
 
 struct SubRecordData
 {
-	std::string sig;
-	std::vector<uint8_t> data;
+	std::string Sig;
+	std::vector<uint8_t> Data;
 
 	// Get string data with proper encoding
 	std::string GetString() const
 	{
-		if (data.empty()) return "";
+		if (Data.empty()) return "";
 
 		//Using SSEAT~ RawString
-		return RawString::FromBytes(data).ToUTF8String();
+		return RawString::FromBytes(Data).ToUTF8String();
 	}
 };
 
 class EspRecord 
 {
 	public:
-	std::string sig;
-	uint32_t formID;
-	uint32_t flags;
-	std::vector<SubRecordData> subRecords;
+	std::string Sig;
+	uint32_t FormID;
+	uint32_t Flags;
+	std::vector<SubRecordData> SubRecords;
 
 	EspRecord(const char* s, uint32_t fID, uint32_t fl)
-		: sig(s, 4), formID(fID), flags(fl)
+		: Sig(s, 4), FormID(fID), Flags(fl)
 	{
 	}
 
 	bool CanTranslate() const
 	{
-		for (const auto& Sub : subRecords)
+		for (const auto& Sub : SubRecords)
 		{
-			if (!Sub.data.empty())
+			if (!Sub.Data.empty())
 			{
 				std::string Text = Sub.GetString();
 
 				if (!Text.empty())
 				{
-					return true;
+					if (HasVisibleText(Text))
+					{
+						return true;
+					}
 				}
 			}
 		}
 		return false;
 	}
 
-	void AddSubRecord(const char* s, const uint8_t* data, size_t size)
+	void AddSubRecord(const char* Str, const uint8_t* Data, size_t Size)
 	{
 		SubRecordData sub;
-		sub.sig = std::string(s, 4);
-		if (data && size > 0)
-			sub.data.assign(data, data + size);
-		subRecords.push_back(std::move(sub));
+		sub.Sig = std::string(Str, 4);
+		if (Data && Size > 0)
+			sub.Data.assign(Data, Data + Size);
+		SubRecords.push_back(std::move(sub));
 	}
 
 	std::vector<std::pair<std::string, std::string>> GetSubRecordValues(
@@ -274,7 +278,7 @@ class EspRecord
 	{
 		std::vector<std::pair<std::string, std::string>> results;
 
-		auto it = recordSubMap.find(sig);
+		auto it = recordSubMap.find(Sig);
 		if (it == recordSubMap.end())
 		{
 			return results;
@@ -282,11 +286,11 @@ class EspRecord
 
 		for (const auto& subSig : it->second)
 		{
-			for (const auto& sub : subRecords)
+			for (const auto& sub : SubRecords)
 			{
-				if (sub.sig == subSig)
+				if (sub.Sig == subSig)
 				{
-					results.emplace_back(sub.sig, sub.GetString());
+					results.emplace_back(sub.Sig, sub.GetString());
 					break;
 				}
 			}
@@ -298,72 +302,72 @@ class EspRecord
 	// Check if this is a CELL record
 	bool IsCell() const
 	{
-		return sig == "CELL";
+		return Sig == "CELL";
 	}
 
 	std::string GetUniqueKey() const
 	{
 		// For other records, FormID should be unique
-		return sig + ":" + std::to_string(formID);
+		return Sig + ":" + std::to_string(FormID);
 	}
 };
 
-class EspDocument
+class EspData
 {
 	public:
-	std::vector<EspRecord> records;
-	std::unordered_map<std::string, size_t> recordIndex;
-	std::unordered_set<uint32_t> formIDs;
-	std::unordered_map<std::string, std::vector<size_t>> cellRecords;
-	size_t grupCount;
-	bool hasTES4Header;
+	std::vector<EspRecord> Records;
+	std::unordered_map<std::string, size_t> RecordIndex;
+	std::unordered_set<uint32_t> FormIDs;
+	std::unordered_map<std::string, std::vector<size_t>> CellRecords;
+	size_t GrupCount;
+	bool HasTES4Header;
 
-	EspDocument() : grupCount(0), hasTES4Header(false) {}
+	EspData() : GrupCount(0), HasTES4Header(false) {}
 
 
 	void AddRecord(EspRecord&& rec)
 	{
-		const size_t index = records.size();
+		const size_t index = Records.size();
 		const std::string UniqueKey = rec.GetUniqueKey();
 
-		if (recordIndex.count(UniqueKey))
+		if (RecordIndex.count(UniqueKey))
 		{
 			std::cerr << "[Warn] Duplicate record key: " << UniqueKey << "\n";
 		}
 		else
 		{
-			recordIndex.emplace(UniqueKey, index);
+			RecordIndex.emplace(UniqueKey, index);
 		}
 
-		if (rec.sig == "TES4")
+		if (rec.Sig == "TES4")
 		{
-			hasTES4Header = true;
+			HasTES4Header = true;
 		}
 
-		if (!formIDs.insert(rec.formID).second)
+		if (!FormIDs.insert(rec.FormID).second)
 		{
 			std::cerr << "[Warn] Duplicate FormID 0x"
-				<< std::hex << rec.formID << std::dec
-				<< " for record " << rec.sig << "\n";
+				<< std::hex << rec.FormID << std::dec
+				<< " for record " << rec.Sig << "\n";
 		}
 
 		if (rec.IsCell())
 		{
-			cellRecords[UniqueKey].push_back(index);
+			CellRecords[UniqueKey].push_back(index);
 		}
 
-		records.push_back(std::move(rec));
+		Records.push_back(std::move(rec));
 	}
 
 	void IncrementGrupCount()
 	{
-		grupCount++;
+		GrupCount++;
 	}
 
 	// Find Record by Editor ID
 	const EspRecord* FindByUniqueKey(const std::string& key) const
 	{
-		for (const auto& rec : records)
+		for (const auto& rec : Records)
 		{
 			if (rec.GetUniqueKey() == key)
 			{
@@ -376,57 +380,57 @@ class EspDocument
 
 	size_t GetCount() const
 	{
-		return records.size();
+		return Records.size();
 	}
 
 	// TES5Edit counts Records + GRUPs (excluding TES4 header)
 	size_t GetTotalCount() const
 	{
-		size_t count = records.size() + grupCount;
-		if (hasTES4Header)
+		size_t Count = Records.size() + GrupCount;
+		if (HasTES4Header)
 		{
-			count--; // Exclude TES4 header from count
+			Count--; // Exclude TES4 header from count
 		}
-		return count;
+		return Count;
 	}
 
 	// Print statistics
 	void PrintStatistics() const
 	{
-		std::unordered_map<std::string, size_t> typeCounts;
-		for (const auto& rec : records)
+		std::unordered_map<std::string, size_t> TypeCounts;
+		for (const auto& Rec : Records)
 		{
-			typeCounts[rec.sig]++;
+			TypeCounts[Rec.Sig]++;
 		}
 
 		std::cout << "\n=== Record Statistics ===\n";
-		for (const auto& pair : typeCounts)
+		for (const auto& pair : TypeCounts)
 		{
 			std::cout << pair.first << ": " << pair.second << "\n";
 		}
-		std::cout << "Total Records: " << records.size() << "\n";
-		std::cout << "Total GRUPs: " << grupCount << "\n";
+		std::cout << "Total Records: " << Records.size() << "\n";
+		std::cout << "Total GRUPs: " << GrupCount << "\n";
 		std::cout << "Total (Records + GRUPs";
-		if (hasTES4Header)
+		if (HasTES4Header)
 		{
 			std::cout << ", excluding TES4 header";
 		}
 		std::cout << "): " << GetTotalCount() << "\n";
 
 		// Check for CELL conflicts
-		size_t cellConflicts = 0;
-		for (const auto& pair : cellRecords)
+		size_t CellConflicts = 0;
+		for (const auto& CellRecord : CellRecords)
 		{
-			if (pair.second.size() > 1)
+			if (CellRecord.second.size() > 1)
 			{
-				cellConflicts++;
-				std::cout << "Warning: CELL '" << pair.first << "' has "
-					<< pair.second.size() << " records\n";
+				CellConflicts++;
+				std::cout << "Warning: CELL '" << CellRecord.first << "' has "
+					<< CellRecord.second.size() << " records\n";
 			}
 		}
-		if (cellConflicts > 0)
+		if (CellConflicts > 0)
 		{
-			std::cout << "Total CELL conflicts: " << cellConflicts << "\n";
+			std::cout << "Total CELL conflicts: " << CellConflicts << "\n";
 		}
 	}
 };

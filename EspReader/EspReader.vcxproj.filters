@@ -21,12 +21,18 @@
     <ClCompile Include="miniz.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TextHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="miniz.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="EspRecord.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TextHelper.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
