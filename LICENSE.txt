@@ -1,53 +1,72 @@
-MIT License with Dual-Author Attribution Exception
 =================================================
 
 Copyright (c) 2025
 YD525 (https://github.com/YD525)
 Cutleast (https://github.com/cutleast)
 
-------------------------------------------------------------
-1. License Grant
-------------------------------------------------------------
-This software is licensed under the MIT License (the "License"),
-subject to the additional clarifications and exceptions set forth
-below.
-
-Except as expressly stated in this document, all terms of the MIT
-License apply.
+=================================================
 
 ------------------------------------------------------------
-2. Dual-Author Attribution Requirement
+1. License Overview
 ------------------------------------------------------------
-Any redistribution of this software, in source or binary form, must
-retain the MIT License text and clearly attribute BOTH original
-authors:
+This software is dual-licensed under different terms depending on
+the identity of the user.
+
+- The original authors (YD525 and Cutleast) are granted special
+  author exceptions as described in Section 2.
+- All other individuals or entities ("Third Parties") are subject
+  to the GNU General Public License version 3.0 (GPL-3.0), as
+  described in Section 3.
+
+------------------------------------------------------------
+2. Author Exception (Original Authors Only)
+------------------------------------------------------------
+YD525 and Cutleast, as the original authors and joint copyright
+holders, are granted unrestricted rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or commercialize this
+software, with or without attribution, under any license of their
+choice.
+
+This exception overrides any copyleft, attribution, or distribution
+requirements that would otherwise apply.
+
+------------------------------------------------------------
+3. GPL-3.0 License Requirement (Third Parties)
+------------------------------------------------------------
+All individuals or entities other than YD525 and Cutleast ("Third
+Parties") are permitted to use, copy, modify, and distribute this
+software ONLY under the terms of the GNU General Public License
+version 3.0 (GPL-3.0).
+
+Accordingly, Third Parties MUST:
+
+- License derivative works under GPL-3.0
+- Provide complete corresponding source code
+- Retain copyright notices and this license document
+- Grant the same freedoms to downstream recipients
+
+------------------------------------------------------------
+4. Attribution & No Misrepresentation
+------------------------------------------------------------
+Third Parties must retain clear attribution to BOTH original authors:
 
 - YD525
 - Cutleast
 
-Such attribution must be reasonably visible and must not remove,
-alter, or obscure existing copyright notices.
-
-------------------------------------------------------------
-3. Author Exception
-------------------------------------------------------------
-YD525 and Cutleast, as the original authors and joint copyright holders,
-are granted unrestricted rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or commercialize this software, with or
-without attribution, notwithstanding any attribution requirements
-that may otherwise apply under the MIT License.
-
-------------------------------------------------------------
-4. No Misrepresentation
-------------------------------------------------------------
-Third parties may not claim authorship of this software, nor imply
+Third Parties may not claim authorship of this software, nor imply
 endorsement, maintenance, or responsibility by YD525 or Cutleast,
 without explicit prior written permission.
 
 ------------------------------------------------------------
-5. Interpretation
+5. License Precedence & Interpretation
 ------------------------------------------------------------
-This exception is intended to supplement and clarify the MIT License.
-In the event of ambiguity between this document and the MIT License
-text, this document shall govern the interpretation of the relevant
-provisions.
+For Third Parties, the terms of the GNU GPL version 3.0 shall govern
+all use, modification, and distribution of this software.
+
+For YD525 and Cutleast, the Author Exception in Section 2 shall
+govern.
+
+In the event of any ambiguity, this document shall take precedence
+over any default license assumptions.
+
+=================================================
