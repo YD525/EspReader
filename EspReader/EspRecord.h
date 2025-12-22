@@ -149,7 +149,7 @@ inline bool IsLikelyUTF8(const uint8_t* Data, size_t Size)
 	}
 	return true;
 }
-
+//https://github.com/Cutleast/sse-plugin-interface/blob/master/src%2Fsse_plugin_interface%2Fdatatypes.py#L209-L233
 class RawString
 {
 public:
