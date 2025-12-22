@@ -1,46 +1,92 @@
 ﻿  EspReader.cpp
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(94,35): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(96,49): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(528,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(49,13): warning C4273: 'C_GetRecordSig': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(41,25):
+      see previous definition of 'C_GetRecordSig'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(55,10): warning C4273: 'C_GetRecordFormID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(42,22):
+      see previous definition of 'C_GetRecordFormID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(61,10): warning C4273: 'C_GetRecordFlags': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(43,22):
+      see previous definition of 'C_GetRecordFlags'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(67,5): warning C4273: 'C_GetSubRecordCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(44,17):
+      see previous definition of 'C_GetSubRecordCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(73,13): warning C4273: 'C_GetSubRecordSig': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(35,25):
+      see previous definition of 'C_GetSubRecordSig'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(80,13): warning C4273: 'C_GetSubRecordString': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(36,25):
+      see previous definition of 'C_GetSubRecordString'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(90,6): warning C4273: 'C_IsSubRecordLocalized': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(37,18):
+      see previous definition of 'C_IsSubRecordLocalized'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(97,10): warning C4273: 'C_GetSubRecordStringID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(38,22):
+      see previous definition of 'C_GetSubRecordStringID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(104,5): warning C4273: 'C_GetSubRecordDataSize': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(39,17):
+      see previous definition of 'C_GetSubRecordDataSize'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(111,6): warning C4273: 'C_GetSubRecordData': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(40,18):
+      see previous definition of 'C_GetSubRecordData'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(180,35): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(182,49): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(615,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(32,17):
       see previous definition of 'C_ReadEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(533,6): warning C4273: 'C_InitDefaultFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(620,6): warning C4273: 'C_InitDefaultFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(28,18):
       see previous definition of 'C_InitDefaultFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(539,6): warning C4273: 'C_ClearFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(626,6): warning C4273: 'C_ClearFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(31,18):
       see previous definition of 'C_ClearFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(556,5): warning C4273: 'C_SetDefaultFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(643,5): warning C4273: 'C_SetDefaultFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(29,17):
       see previous definition of 'C_SetDefaultFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(615,6): warning C4273: 'C_SetFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(702,6): warning C4273: 'C_SetFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(30,17):
       see previous definition of 'C_SetFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(645,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(668,6): warning C4273: 'C_Init': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(715,19): warning C4267: 'return': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(734,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(757,6): warning C4273: 'C_Init': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(27,18):
       see previous definition of 'C_Init'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(673,6): warning C4273: 'C_Close': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(35,18):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(762,6): warning C4273: 'C_Close': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(46,21):
       see previous definition of 'C_Close'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(678,13): warning C4273: 'C_SearchBySig': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(767,13): warning C4273: 'C_SearchBySig': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(33,25):
       see previous definition of 'C_SearchBySig'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(695,6): warning C4273: 'FreeSearchResults': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(784,6): warning C4273: 'FreeSearchResults': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(34,18):
       see previous definition of 'FreeSearchResults'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(863,6): warning C4273: 'C_Clear': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(45,18):
+      see previous definition of 'C_Clear'
   
   StringsFileHelper.h
   TextHelper.cpp
   Generating Code...
   miniz.c
+  LINK : C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exe not found or not built by the last incremental link; performing full link
      Creating library C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exp
-  EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.dll
+  EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exe

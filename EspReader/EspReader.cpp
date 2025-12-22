@@ -32,14 +32,36 @@ extern "C"
 	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
 	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);//Remember to clone and destroy the record after reading it.
 	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
-	SSELex_API int C_GetSubRecordCount(EspRecord* record);
 	SSELex_API const char* C_GetSubRecordSig(EspRecord* record, int index);
 	SSELex_API const char* C_GetSubRecordString(EspRecord* record, int index);
 	SSELex_API bool C_IsSubRecordLocalized(EspRecord* record, int index);
 	SSELex_API uint32_t C_GetSubRecordStringID(EspRecord* record, int index);
 	SSELex_API int C_GetSubRecordDataSize(EspRecord* record, int index);
 	SSELex_API bool C_GetSubRecordData(EspRecord* record, int index, uint8_t* buffer, int bufferSize);
+	SSELex_API const char* C_GetRecordSig(EspRecord* record);
+	SSELex_API uint32_t C_GetRecordFormID(EspRecord* record);
+	SSELex_API uint32_t C_GetRecordFlags(EspRecord* record);
+	SSELex_API int C_GetSubRecordCount(EspRecord* record);
+	SSELex_API void C_Clear();
     SSELex_API void C_Close();
+}
+
+const char* C_GetRecordSig(EspRecord* record)
+{
+	if (!record) return nullptr;
+	return record->Sig.c_str();
+}
+
+uint32_t C_GetRecordFormID(EspRecord* record)
+{
+	if (!record) return 0;
+	return record->FormID;
+}
+
+uint32_t C_GetRecordFlags(EspRecord* record)
+{
+	if (!record) return 0;
+	return record->Flags;
 }
 
 int C_GetSubRecordCount(EspRecord* record)
@@ -101,7 +123,6 @@ bool C_GetSubRecordData(EspRecord* record, int index, uint8_t* buffer, int buffe
 
 
 void Close();
-void ClearDocument();
 
 #pragma pack(push, 1)
 struct RecordHeader
@@ -559,10 +580,11 @@ void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& fil
 
 std::wstring LastSetPath;
 EspData* Data;
+void Clear();
 
 int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 {
-	ClearDocument();
+	Clear();
 	LastSetPath = EspPath;
 	Data = new EspData();
 
@@ -689,6 +711,8 @@ int C_SetDefaultFilter()
 		 {
 			 Vec.push_back(std::string(ChildSigs[i]));
 		 }
+
+		 return Vec.size();
 	 }
 	 return -1;
 }
@@ -771,46 +795,49 @@ void FreeSearchResults(EspRecord** Arr, int Count)
 
 int main()
 {
-	//SetConsoleOutputCP(CP_UTF8);
+	SetConsoleOutputCP(CP_UTF8);
 
-	//Init();
+	Init();
 
-	//const wchar_t* EspPath = TEXT("C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp");
+	C_InitDefaultFilter();
+	C_SetDefaultFilter();
 
-	//std::cout << "Starting ESP parsing with filter...\n";
-	//if (TranslateFilter->IsEnabled())
-	//{
-	//	std::cout << "Filter is enabled - only specified records will be parsed.\n";
-	//}
-	//else {
-	//	std::cout << "Filter is disabled - all records will be parsed.\n";
-	//}
+	const wchar_t* EspPath = TEXT("C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp");
 
-	//int state = ReadEsp(EspPath, *TranslateFilter);
+	std::cout << "Starting ESP parsing with filter...\n";
+	if (TranslateFilter->IsEnabled())
+	{
+		std::cout << "Filter is enabled - only specified records will be parsed.\n";
+	}
+	else {
+		std::cout << "Filter is disabled - all records will be parsed.\n";
+	}
 
-	//if (state == 0)
-	//{
-	//	std::cout << "Finished reading ESP.\n";
-	//	std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
+	int state = ReadEsp(EspPath, *TranslateFilter);
 
-	//	// Print statistics
-	//	Data->PrintStatistics();
+	if (state == 0)
+	{
+		std::cout << "Finished reading ESP.\n";
+		std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
 
-	//	//Test Query Cells
-	//	std::cout << "CellCount: " << Data->SearchBySig("CELL").size() << "\n\n";
+		// Print statistics
+		Data->PrintStatistics();
 
-	//	GetCanTransCount();
-	//}
-	//else
-	//{
-	//	std::cerr << "Failed to read ESP\n";
-	//}
+		//Test Query Cells
+		std::cout << "CellCount: " << Data->SearchBySig("CELL").size() << "\n\n";
 
-	//Close();
+		GetCanTransCount();
+	}
+	else
+	{
+		std::cerr << "Failed to read ESP\n";
+	}
 
-	//WaitForExit();
+	Close();
 
-	//return 0;
+	WaitForExit();
+
+	return 0;
 }
 
 const EspRecord* GetRecord(char* Key)
@@ -825,20 +852,25 @@ const EspRecord* GetRecord(char* Key)
 	return Item;
 }
 
-void Close()
-{
-	delete TranslateFilter;
-	TranslateFilter = nullptr;
-
-	ClearDocument();
-}
-
-void ClearDocument()
+void Clear()
 {
 	delete Data;
 	Data = nullptr;
 
 	LastSetPath = TEXT("");
+}
+
+void C_Clear()
+{
+	Clear();
+}
+
+void Close()
+{
+	delete TranslateFilter;
+	TranslateFilter = nullptr;
+
+	Clear();
 }
 
 
