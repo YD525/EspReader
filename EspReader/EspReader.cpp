@@ -32,8 +32,73 @@ extern "C"
 	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
 	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);//Remember to clone and destroy the record after reading it.
 	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
-	SSELex_API void C_Close();
+	SSELex_API int C_GetSubRecordCount(EspRecord* record);
+	SSELex_API const char* C_GetSubRecordSig(EspRecord* record, int index);
+	SSELex_API const char* C_GetSubRecordString(EspRecord* record, int index);
+	SSELex_API bool C_IsSubRecordLocalized(EspRecord* record, int index);
+	SSELex_API uint32_t C_GetSubRecordStringID(EspRecord* record, int index);
+	SSELex_API int C_GetSubRecordDataSize(EspRecord* record, int index);
+	SSELex_API bool C_GetSubRecordData(EspRecord* record, int index, uint8_t* buffer, int bufferSize);
+    SSELex_API void C_Close();
 }
+
+int C_GetSubRecordCount(EspRecord* record)
+{
+	if (!record) return 0;
+	return static_cast<int>(record->SubRecords.size());
+}
+
+const char* C_GetSubRecordSig(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return nullptr;
+	return record->SubRecords[index].Sig.c_str();
+}
+
+const char* C_GetSubRecordString(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return nullptr;
+
+	static std::string buffer;
+	buffer = record->SubRecords[index].GetString();
+	return buffer.c_str();
+}
+
+bool C_IsSubRecordLocalized(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return false;
+	return record->SubRecords[index].IsLocalized;
+}
+
+uint32_t C_GetSubRecordStringID(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return 0;
+	return record->SubRecords[index].StringID;
+}
+
+int C_GetSubRecordDataSize(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return 0;
+	return static_cast<int>(record->SubRecords[index].Data.size());
+}
+
+bool C_GetSubRecordData(EspRecord* record, int index, uint8_t* buffer, int bufferSize)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return false;
+
+	const auto& data = record->SubRecords[index].Data;
+	if (bufferSize < data.size())
+		return false;
+
+	std::memcpy(buffer, data.data(), data.size());
+	return true;
+}
+
 
 void Close();
 void ClearDocument();
