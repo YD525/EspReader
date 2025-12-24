@@ -43,63 +43,63 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(134,6): warning C4
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(49,18):
       see previous definition of 'C_SubRecordData_GetData'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(147,13): warning C4273: 'C_GetRecordSig': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(146,13): warning C4273: 'C_GetRecordSig': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(36,25):
       see previous definition of 'C_GetRecordSig'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(153,10): warning C4273: 'C_GetRecordFormID': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(152,10): warning C4273: 'C_GetRecordFormID': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(37,22):
       see previous definition of 'C_GetRecordFormID'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(159,10): warning C4273: 'C_GetRecordFlags': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(158,10): warning C4273: 'C_GetRecordFlags': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(38,22):
       see previous definition of 'C_GetRecordFlags'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(165,5): warning C4273: 'C_GetSubRecordCount': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(164,5): warning C4273: 'C_GetSubRecordCount': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(39,17):
       see previous definition of 'C_GetSubRecordCount'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(227,35): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(229,49): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(662,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(226,35): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(228,49): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(661,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(32,17):
       see previous definition of 'C_ReadEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(667,6): warning C4273: 'C_InitDefaultFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(666,6): warning C4273: 'C_InitDefaultFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(28,18):
       see previous definition of 'C_InitDefaultFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(673,6): warning C4273: 'C_ClearFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(672,6): warning C4273: 'C_ClearFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(31,18):
       see previous definition of 'C_ClearFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(690,5): warning C4273: 'C_SetDefaultFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(689,5): warning C4273: 'C_SetDefaultFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(29,17):
       see previous definition of 'C_SetDefaultFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(749,6): warning C4273: 'C_SetFilter': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(748,6): warning C4273: 'C_SetFilter': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(30,17):
       see previous definition of 'C_SetFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(762,19): warning C4267: 'return': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(781,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(804,6): warning C4273: 'C_Init': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(761,19): warning C4267: 'return': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(780,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(803,6): warning C4273: 'C_Init': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(27,18):
       see previous definition of 'C_Init'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(809,6): warning C4273: 'C_Close': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(808,6): warning C4273: 'C_Close': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(54,18):
       see previous definition of 'C_Close'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(814,13): warning C4273: 'C_SearchBySig': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(813,13): warning C4273: 'C_SearchBySig': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(33,25):
       see previous definition of 'C_SearchBySig'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(831,6): warning C4273: 'FreeSearchResults': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(830,6): warning C4273: 'FreeSearchResults': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(34,18):
       see previous definition of 'FreeSearchResults'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(910,6): warning C4273: 'C_Clear': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(909,6): warning C4273: 'C_Clear': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(53,18):
       see previous definition of 'C_Clear'
   
@@ -109,6 +109,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(910,6): warning C4
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 1806 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 1801 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll

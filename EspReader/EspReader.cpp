@@ -143,7 +143,6 @@ bool C_SubRecordData_GetData(const SubRecordData* subRecord, uint8_t* buffer, in
 	return true;
 }
 
-// ✅ Record API 实现
 const char* C_GetRecordSig(EspRecord* record)
 {
 	if (!record) return nullptr;

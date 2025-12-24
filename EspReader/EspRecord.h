@@ -430,9 +430,10 @@ public:
 		return Sig == "CELL";
 	}
 
+	//This is the key for the main record, not for the sub-record!
 	std::string GetUniqueKey() const
 	{
-		return Sig + ":" + std::to_string(FormID);
+		return std::to_string(FormID) + ":" + Sig;
 	}
 
 	std::string GetEditorID() const
