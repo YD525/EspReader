@@ -66,12 +66,13 @@ int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffe
 	if (!subRecord) return -1;
 
 	std::string str = subRecord->GetString();
-	int len = static_cast<int>(str.size());
+
+	const char* cstr = str.c_str();
+	int len = static_cast<int>(strlen(cstr)); 
 
 	if (buffer && bufferSize > len)
 	{
-		std::memcpy(buffer, str.c_str(), len);
-		buffer[len] = 0;
+		std::memcpy(buffer, cstr, len + 1); 
 	}
 
 	return len;

@@ -271,8 +271,8 @@ struct SubRecordData
 	std::vector<uint8_t> Data;
 	bool IsLocalized;
 	uint32_t StringID;
-	int OccurrenceIndex;   
-	int GlobalIndex;       
+	int OccurrenceIndex;
+	int GlobalIndex;
 
 	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), GlobalIndex(0) {}
 
@@ -319,7 +319,7 @@ public:
 		, FormID(other.FormID)
 		, Flags(other.Flags)
 		, SubRecords(other.SubRecords)
-		, TotalOccurrenceCount(other.TotalOccurrenceCount) 
+		, TotalOccurrenceCount(other.TotalOccurrenceCount)
 	{
 	}
 
@@ -331,7 +331,7 @@ public:
 			FormID = other.FormID;
 			Flags = other.Flags;
 			SubRecords = other.SubRecords;
-			TotalOccurrenceCount = other.TotalOccurrenceCount; 
+			TotalOccurrenceCount = other.TotalOccurrenceCount;
 		}
 		return *this;
 	}
@@ -343,17 +343,13 @@ public:
 			const SubRecordData& Sub = SubRecords[i];
 			if (!Sub.Data.empty())
 			{
-				if (Sub.IsLocalized)
+				std::string Text = Sub.GetString();
+
+				Text.erase(std::remove(Text.begin(), Text.end(), '\0'), Text.end());
+
+				if (!Text.empty())
 				{
-					if (Sub.StringID != 0)
-					{
-						return true;
-					}
-				}
-				else
-				{
-					std::string Text = Sub.GetString();
-					if (!Text.empty() && HasVisibleText(Text))
+					if (HasVisibleText(Text))
 					{
 						return true;
 					}
@@ -451,7 +447,7 @@ public:
 
 class EspData
 {
-	public:
+public:
 	std::vector<EspRecord> Records;
 	std::unordered_map<std::string, size_t> RecordIndex;
 	std::unordered_set<uint32_t> FormIDs;
@@ -470,23 +466,23 @@ class EspData
 	{
 		std::vector<EspRecord> Matches;
 
-		auto MatchesRecord = [&](const EspRecord& Rec) -> bool 
-		{
-		
-			if (ParentSig != "ALL" && Rec.Sig != ParentSig)
-				return false;
-
-			
-			if (ChildSig.empty() || ChildSig == "ALL")
-				return true;
-
-			for (const auto& Sub : Rec.SubRecords)
+		auto MatchesRecord = [&](const EspRecord& Rec) -> bool
 			{
-				if (Sub.Sig == ChildSig)
-					return true;
-			}
 
-			return false;
+				if (ParentSig != "ALL" && Rec.Sig != ParentSig)
+					return false;
+
+
+				if (ChildSig.empty() || ChildSig == "ALL")
+					return true;
+
+				for (const auto& Sub : Rec.SubRecords)
+				{
+					if (Sub.Sig == ChildSig)
+						return true;
+				}
+
+				return false;
 			};
 
 		for (const auto& Rec : Records)
@@ -584,7 +580,7 @@ class EspData
 				std::string Text = Sub.GetString();
 				if (!Text.empty() && MatchesQuery(Text)) {
 					Matches.push_back(Rec);
-					break; 
+					break;
 				}
 			}
 		}
