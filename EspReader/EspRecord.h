@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <fstream>
 #include <vector>
 #include <string>
@@ -271,8 +271,10 @@ struct SubRecordData
 	std::vector<uint8_t> Data;
 	bool IsLocalized;
 	uint32_t StringID;
+	int OccurrenceIndex;   
+	int GlobalIndex;       
 
-	SubRecordData() : IsLocalized(false), StringID(0) {}
+	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), GlobalIndex(0) {}
 
 	std::string GetString() const
 	{
@@ -297,6 +299,7 @@ struct SubRecordData
 	}
 };
 
+
 class EspRecord
 {
 public:
@@ -304,10 +307,33 @@ public:
 	uint32_t FormID;
 	uint32_t Flags;
 	std::vector<SubRecordData> SubRecords;
+	std::unordered_map<std::string, int> TotalOccurrenceCount;
 
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
 		: Sig(S, 4), FormID(FID), Flags(FL)
 	{
+	}
+
+	EspRecord(const EspRecord& other)
+		: Sig(other.Sig)
+		, FormID(other.FormID)
+		, Flags(other.Flags)
+		, SubRecords(other.SubRecords)
+		, TotalOccurrenceCount(other.TotalOccurrenceCount) 
+	{
+	}
+
+	EspRecord& operator=(const EspRecord& other)
+	{
+		if (this != &other)
+		{
+			Sig = other.Sig;
+			FormID = other.FormID;
+			Flags = other.Flags;
+			SubRecords = other.SubRecords;
+			TotalOccurrenceCount = other.TotalOccurrenceCount; 
+		}
+		return *this;
 	}
 
 	bool CanTranslate() const
@@ -337,16 +363,21 @@ public:
 		return false;
 	}
 
-	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size,RecordFilter& Filter)
+	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
 		Sub.Sig = std::string(Str, 4);
+
+		int CurrentOccurrence = TotalOccurrenceCount[Sub.Sig];
+		TotalOccurrenceCount[Sub.Sig]++;
+
+		Sub.OccurrenceIndex = CurrentOccurrence;
+		Sub.GlobalIndex = static_cast<int>(SubRecords.size());
 
 		if (DataPtr && Size > 0)
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
 
-			// Check if localized field
 			if (g_StringsManager &&
 				StringsManager::IsLocalized(Flags) &&
 				StringsManager::IsLocalizedField(Sub.Sig))
@@ -414,18 +445,6 @@ public:
 			}
 		}
 		return "";
-	}
-
-	std::string GetDisplayName() const
-	{
-		for (size_t i = 0; i < SubRecords.size(); ++i)
-		{
-			if (SubRecords[i].Sig == "FULL")
-			{
-				return SubRecords[i].GetString();
-			}
-		}
-		return GetEditorID();
 	}
 };
 
@@ -655,10 +674,12 @@ class EspData
 				CellByEditorID[EditorID] = CellIndex;
 			}
 		}
-
-		if (Filter.ShouldParseRecordWithSub(Rec.Sig,""))
+		else
 		{
-			Records.push_back(Rec);
+			if (Filter.ShouldParseRecordWithSub(Rec.Sig, ""))
+			{
+				Records.push_back(Rec);
+			}
 		}
 	}
 

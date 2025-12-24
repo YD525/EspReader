@@ -26,26 +26,124 @@ extern "C"
 {
 	SSELex_API void C_Init();
 	SSELex_API void C_InitDefaultFilter();
-	SSELex_API int C_SetDefaultFilter();//Remember to clear before calling.
+	SSELex_API int C_SetDefaultFilter();
 	SSELex_API int C_SetFilter(const char* parentSig, const char** childSigs, int childCount);
 	SSELex_API void C_ClearFilter();
 	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
-	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);//Remember to clone and destroy the record after reading it.
+	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);
 	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
-	SSELex_API const char* C_GetSubRecordSig(EspRecord* record, int index);
-	SSELex_API const char* C_GetSubRecordString(EspRecord* record, int index);
-	SSELex_API bool C_IsSubRecordLocalized(EspRecord* record, int index);
-	SSELex_API uint32_t C_GetSubRecordStringID(EspRecord* record, int index);
-	SSELex_API int C_GetSubRecordDataSize(EspRecord* record, int index);
-	SSELex_API bool C_GetSubRecordData(EspRecord* record, int index, uint8_t* buffer, int bufferSize);
+
 	SSELex_API const char* C_GetRecordSig(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFormID(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFlags(EspRecord* record);
 	SSELex_API int C_GetSubRecordCount(EspRecord* record);
+
+	SSELex_API const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index);
+	SSELex_API int C_SubRecordData_GetOccurrenceIndex(const SubRecordData* subRecord);
+	SSELex_API int C_SubRecordData_GetGlobalIndex(const SubRecordData* subRecord);
+	SSELex_API const char* C_SubRecordData_GetSig(const SubRecordData* subRecord);
+	SSELex_API const char* C_SubRecordData_GetString(const SubRecordData* subRecord);
+	SSELex_API bool C_SubRecordData_IsLocalized(const SubRecordData* subRecord);
+	SSELex_API uint32_t C_SubRecordData_GetStringID(const SubRecordData* subRecord);
+	SSELex_API int C_SubRecordData_GetDataSize(const SubRecordData* subRecord);
+	SSELex_API bool C_SubRecordData_GetData(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
+	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
+	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
+
 	SSELex_API void C_Clear();
-    SSELex_API void C_Close();
+	SSELex_API void C_Close();
 }
 
+const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return nullptr;
+	return &record->SubRecords[index];
+}
+
+int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
+{
+	if (!subRecord) return -1;
+
+	std::string str = subRecord->GetString();
+	int len = static_cast<int>(str.size());
+
+	if (buffer && bufferSize > len)
+	{
+		std::memcpy(buffer, str.c_str(), len);
+		buffer[len] = 0;
+	}
+
+	return len;
+}
+
+int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
+{
+	if (!subRecord) return -1;
+
+	int len = static_cast<int>(subRecord->Sig.size());
+
+	if (buffer && bufferSize > len)
+	{
+		std::memcpy(buffer, subRecord->Sig.c_str(), len);
+		buffer[len] = 0;
+	}
+
+	return len;
+}
+
+int C_SubRecordData_GetOccurrenceIndex(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->OccurrenceIndex : -1;
+}
+
+int C_SubRecordData_GetGlobalIndex(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->GlobalIndex : -1;
+}
+
+const char* C_SubRecordData_GetSig(const SubRecordData* subRecord)
+{
+	if (!subRecord) return nullptr;
+	return subRecord->Sig.c_str();
+}
+
+const char* C_SubRecordData_GetString(const SubRecordData* subRecord)
+{
+	if (!subRecord) return nullptr;
+	static std::string buffer;
+	buffer = subRecord->GetString();
+	return buffer.c_str();
+}
+
+bool C_SubRecordData_IsLocalized(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->IsLocalized : false;
+}
+
+uint32_t C_SubRecordData_GetStringID(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->StringID : 0;
+}
+
+int C_SubRecordData_GetDataSize(const SubRecordData* subRecord)
+{
+	return subRecord ? static_cast<int>(subRecord->Data.size()) : 0;
+}
+
+bool C_SubRecordData_GetData(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
+{
+	if (!subRecord || !buffer) return false;
+
+	const auto& data = subRecord->Data;
+	if (bufferSize < data.size())
+		return false;
+
+	std::memcpy(buffer, data.data(), data.size());
+	return true;
+}
+
+// ✅ Record API 实现
 const char* C_GetRecordSig(EspRecord* record)
 {
 	if (!record) return nullptr;
@@ -68,57 +166,6 @@ int C_GetSubRecordCount(EspRecord* record)
 {
 	if (!record) return 0;
 	return static_cast<int>(record->SubRecords.size());
-}
-
-const char* C_GetSubRecordSig(EspRecord* record, int index)
-{
-	if (!record || index < 0 || index >= record->SubRecords.size())
-		return nullptr;
-	return record->SubRecords[index].Sig.c_str();
-}
-
-const char* C_GetSubRecordString(EspRecord* record, int index)
-{
-	if (!record || index < 0 || index >= record->SubRecords.size())
-		return nullptr;
-
-	static std::string buffer;
-	buffer = record->SubRecords[index].GetString();
-	return buffer.c_str();
-}
-
-bool C_IsSubRecordLocalized(EspRecord* record, int index)
-{
-	if (!record || index < 0 || index >= record->SubRecords.size())
-		return false;
-	return record->SubRecords[index].IsLocalized;
-}
-
-uint32_t C_GetSubRecordStringID(EspRecord* record, int index)
-{
-	if (!record || index < 0 || index >= record->SubRecords.size())
-		return 0;
-	return record->SubRecords[index].StringID;
-}
-
-int C_GetSubRecordDataSize(EspRecord* record, int index)
-{
-	if (!record || index < 0 || index >= record->SubRecords.size())
-		return 0;
-	return static_cast<int>(record->SubRecords[index].Data.size());
-}
-
-bool C_GetSubRecordData(EspRecord* record, int index, uint8_t* buffer, int bufferSize)
-{
-	if (!record || index < 0 || index >= record->SubRecords.size())
-		return false;
-
-	const auto& data = record->SubRecords[index].Data;
-	if (bufferSize < data.size())
-		return false;
-
-	std::memcpy(buffer, data.data(), data.size());
-	return true;
 }
 
 
@@ -883,13 +930,14 @@ std::vector<uint8_t> ModifySubRecords(
 	std::vector<uint8_t> Result;
 	size_t Offset = 0;
 
-	std::unordered_map<std::string, std::vector<const SubRecordData*>> ModifiedSubsMap;
+	std::unordered_map<std::string, std::unordered_map<int, const SubRecordData*>> ModifiedSubsMap;
 	for (const auto& Sub : ModifiedRecord->SubRecords)
 	{
-		ModifiedSubsMap[Sub.Sig].push_back(&Sub);
+		std::string Key = Sub.Sig;
+		ModifiedSubsMap[Key][Sub.OccurrenceIndex] = &Sub;
 	}
 
-	std::unordered_map<std::string, size_t> CurrentOccurrence;
+	std::unordered_map<std::string, int> CurrentOccurrence;
 
 	while (Offset + sizeof(SubRecordHeader) <= OriginalData.size())
 	{
@@ -904,16 +952,18 @@ std::vector<uint8_t> ModifySubRecords(
 
 		std::string SubSig(SH.Sig, 4);
 
-		bool IsModified = false;
-		const SubRecordData* ModifiedSub = NULL;
+		int Occurrence = CurrentOccurrence[SubSig]++;
 
-		auto MapIt = ModifiedSubsMap.find(SubSig);
-		if (MapIt != ModifiedSubsMap.end())
+		bool IsModified = false;
+		const SubRecordData* ModifiedSub = nullptr;
+
+		auto SigIt = ModifiedSubsMap.find(SubSig);
+		if (SigIt != ModifiedSubsMap.end())
 		{
-			size_t Occurrence = CurrentOccurrence[SubSig]++;
-			if (Occurrence < MapIt->second.size())
+			auto OccIt = SigIt->second.find(Occurrence);
+			if (OccIt != SigIt->second.end())
 			{
-				ModifiedSub = MapIt->second[Occurrence];
+				ModifiedSub = OccIt->second;
 				IsModified = true;
 			}
 		}
