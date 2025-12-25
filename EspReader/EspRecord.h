@@ -370,6 +370,10 @@ public:
 		if (Item.Data.empty())
 			return false;
 
+		//Add an extra layer of security.
+		if (!IsProbablyString(Item.Data.data(), Item.Data.size()))
+	    return false;
+
 		std::string Text(Item.Data.begin(), Item.Data.end());
 		Text.erase(std::remove(Text.begin(), Text.end(), '\0'), Text.end());
 
@@ -464,6 +468,73 @@ public:
 		}
 
 		return !allPrintable;
+	}
+
+	inline bool IsProbablyString(const uint8_t* data, size_t size)
+	{
+		if (!data || size == 0)
+			return false;
+
+		if (size == 1)
+		{
+			uint8_t c = data[0];
+			return (c >= 0x20 && c <= 0x7E);
+		}
+
+		size_t zeroCount = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (data[i] == 0)
+				zeroCount++;
+		}
+
+		if (zeroCount > size / 4)
+			return false;
+
+		size_t printable = 0;
+		size_t scanned = 0;
+
+		for (size_t i = 0; i < size && data[i] != 0; ++i)
+		{
+			uint8_t c = data[i];
+			scanned++;
+
+			if (c >= 0x20 && c <= 0x7E)
+				printable++;
+			else if (c == '\n' || c == '\r' || c == '\t')
+				printable++;
+			else if (c >= 0x80)
+				printable++; 
+		}
+
+		if (printable == 0)
+			return false;
+
+		if (printable * 2 < scanned)
+			return false;
+
+		std::string temp;
+		for (size_t i = 0; i < size && data[i] != 0; ++i)
+			temp.push_back(static_cast<char>(data[i]));
+
+		auto IsHexChar = [](char c)
+			{
+				return std::isdigit((unsigned char)c) ||
+					(c >= 'a' && c <= 'f') ||
+					(c >= 'A' && c <= 'F');
+			};
+
+		size_t hexLike = 0;
+		for (char c : temp)
+		{
+			if (IsHexChar(c) || c == '-')
+				hexLike++;
+		}
+
+		if (!temp.empty() && hexLike == temp.size())
+			return false;
+
+		return true;
 	}
 
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
