@@ -15,7 +15,7 @@ EspReader is designed to replace the SSELex EspReader.cs class.
 
 > ⚠️ Note: This library is still under active development.
 
-
+This library was partially inspired by the logic of [SSE-Auto-Translator](https://github.com/Cutleast/SSE-Auto-Translator) and is used here with the explicit permission of its author.
 
 ## Setup Instructions
 
