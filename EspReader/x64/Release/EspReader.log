@@ -109,6 +109,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(910,6): warning C4
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 1828 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 1827 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll

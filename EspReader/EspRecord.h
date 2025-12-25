@@ -359,6 +359,20 @@ public:
 		return false;
 	}
 
+	bool CanTranslateSub(const SubRecordData& Item)
+	{
+		if (Item.Data.empty())
+			return false;
+
+		std::string Text(Item.Data.begin(), Item.Data.end());
+		Text.erase(std::remove(Text.begin(), Text.end(), '\0'), Text.end());
+
+		if (Text.empty())
+			return false;
+
+		return HasVisibleText(Text);
+	}
+
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
@@ -374,12 +388,15 @@ public:
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
 
-			if (g_StringsManager &&
-				StringsManager::IsLocalized(Flags) &&
-				StringsManager::IsLocalizedField(Sub.Sig))
+			bool IsLocalizedField = StringsManager::IsLocalized(Flags) || StringsManager::IsLocalizedField(Sub.Sig);
+
+			if (IsLocalizedField)
 			{
+				uint32_t stringID = 0;
+				std::memcpy(&stringID, DataPtr, sizeof(uint32_t));
+				Sub.StringID = stringID;
+
 				Sub.IsLocalized = true;
-				Sub.StringID = StringsManager::GetStringID(DataPtr, Size);
 			}
 			else
 			{
