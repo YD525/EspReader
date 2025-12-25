@@ -17,9 +17,6 @@
 #include <dirent.h>
 #endif
 
-// Record Flag: Localized String
-constexpr uint32_t RECORD_FLAG_LOCALIZED = 0x00000080;
-
 // Localized Strings Manager
 class StringsManager
 {
@@ -203,12 +200,6 @@ private:
 
 public:
     StringsManager() : currentLanguage_("english") {}
-
-    // Check if record uses localized string
-    static bool IsLocalized(uint32_t flags)
-    {
-        return (flags & RECORD_FLAG_LOCALIZED) != 0;
-    }
 
     // Check if field is a localized field
     static bool IsLocalizedField(const std::string& fieldSig)

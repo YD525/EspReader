@@ -373,6 +373,28 @@ public:
 		return HasVisibleText(Text);
 	}
 
+	bool IsProbablyStringID(const uint8_t* data, size_t size)
+	{
+		if (size < 4) return false;
+
+		uint32_t id;
+		std::memcpy(&id, data, 4);
+
+		if (id > 0x000FFFFF) return false;
+
+		bool allPrintable = true;
+		for (int i = 0; i < 4; ++i)
+		{
+			if (!isprint(data[i]))
+			{
+				allPrintable = false;
+				break;
+			}
+		}
+
+		return !allPrintable;
+	}
+
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
@@ -387,8 +409,8 @@ public:
 		if (DataPtr && Size > 0)
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
-
-			bool IsLocalizedField = StringsManager::IsLocalized(Flags) || StringsManager::IsLocalizedField(Sub.Sig);
+		
+			bool IsLocalizedField = Size == 4 && StringsManager::IsLocalizedField(Sub.Sig) && IsProbablyStringID(DataPtr,4);
 
 			if (IsLocalizedField)
 			{
