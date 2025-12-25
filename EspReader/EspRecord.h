@@ -372,24 +372,11 @@ public:
 
 		bool IsMESG_ITXT = (Parent.Sig == "MESG" && Item.Sig == "ITXT");
 
-		bool IsMESG_FULL = (Parent.Sig == "MESG" && Item.Sig == "FULL");
-
 		if (!HasVisibleText(Text))
 			return false;
 
-		if (IsMESG_FULL)
-		{
-			if (Text == "Safe")
-			{
-				return false;
-			}
-		}
-		else
 		if (IsMESG_ITXT)
 		{
-			if (Text == "Yes" || Text == "No")
-				return false;
-
 			bool AllDigits = true;
 			for (char Char : Text)
 			{
