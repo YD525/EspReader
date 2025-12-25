@@ -359,7 +359,7 @@ public:
 		return false;
 	}
 
-	bool CanTranslateSub(const SubRecordData& Item)
+	bool CanTranslateSub(const EspRecord& Parent, const SubRecordData& Item)
 	{
 		if (Item.Data.empty())
 			return false;
@@ -370,7 +370,85 @@ public:
 		if (Text.empty())
 			return false;
 
-		return HasVisibleText(Text);
+		bool IsMESG_ITXT = (Parent.Sig == "MESG" && Item.Sig == "ITXT");
+
+		bool IsMESG_FULL = (Parent.Sig == "MESG" && Item.Sig == "FULL");
+
+		if (!HasVisibleText(Text))
+			return false;
+
+		if (IsMESG_FULL)
+		{
+			if (Text == "Safe")
+			{
+				return false;
+			}
+		}
+		else
+		if (IsMESG_ITXT)
+		{
+			if (Text == "Yes" || Text == "No")
+				return false;
+
+			bool AllDigits = true;
+			for (char Char : Text)
+			{
+				if (!std::isdigit(Char))
+				{
+					if (Char != '.' && Char != ',')
+					{
+						AllDigits = false;
+						break;
+					}
+				}
+			}
+			if (AllDigits)
+				return false;
+
+			size_t Len = Text.length();
+			if (Len >= 11)
+			{
+				bool IsHexPattern = true;
+				size_t i = 0;
+				int GroupCount = 0;
+				auto IsHexChar = [](char c) {
+					return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+					};
+
+				while (i < Len)
+				{
+					if (i + 1 >= Len)
+					{
+						IsHexPattern = false;
+						break;
+					}
+
+					if (!IsHexChar(Text[i]) || !IsHexChar(Text[i + 1]))
+					{
+						IsHexPattern = false;
+						break;
+					}
+					i += 2;
+
+					if (i < Len)
+					{
+						if (Text[i] != '-')
+						{
+							IsHexPattern = false;
+							break;
+						}
+						i++;
+					}
+
+					GroupCount++;
+				}
+
+				if (IsHexPattern && GroupCount >= 4)
+					return false;
+			}
+		}
+
+		return true;
 	}
 
 	bool IsProbablyStringID(const uint8_t* data, size_t size)
@@ -429,7 +507,10 @@ public:
 
 		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
 		{
-			SubRecords.push_back(Sub);
+			if (CanTranslateSub(*this, Sub))
+			{
+				SubRecords.push_back(Sub);
+			}
 		}
 	}
 
