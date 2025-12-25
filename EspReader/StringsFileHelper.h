@@ -24,27 +24,6 @@ private:
     std::unordered_map<uint32_t, std::string> strings_;
     std::string currentLanguage_;
 
-    // List of localized string fields
-    static const std::unordered_set<std::string>& GetLocalizedFields()
-    {
-        static std::unordered_set<std::string> fields = {
-            "FULL", // Full Name
-            "DESC", // Description
-            "RNAM", // Response Text (INFO)
-            "NAM1", // Prompt (INFO)
-            "CNAM", // Journal Entry (QUST)
-            "NNAM", // Display Name (QUST Stage)
-            "ITXT", // Button Text (MESG)
-            "DNAM", // Description (MGEF)
-            "SHRT", // Short Name (NPC_)
-            "TNAM", // Book Text (BOOK/NOTE)
-            "RDMP", // Map Name (REGN)
-            "EPF2", // Perk Effect Text
-            "EPFD"  // Perk Effect Description
-        };
-        return fields;
-    }
-
     // Check if file exists (compatible with older C++)
     bool FileExists(const std::string& path) const
     {
@@ -200,12 +179,6 @@ private:
 
 public:
     StringsManager() : currentLanguage_("english") {}
-
-    // Check if field is a localized field
-    static bool IsLocalizedField(const std::string& fieldSig)
-    {
-        return GetLocalizedFields().count(fieldSig) > 0;
-    }
 
     // Extract StringID from data (4-byte uint32_t)
     static uint32_t GetStringID(const uint8_t* data, size_t size)

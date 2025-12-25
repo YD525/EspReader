@@ -410,7 +410,7 @@ public:
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
 		
-			bool IsLocalizedField = Size == 4 && StringsManager::IsLocalizedField(Sub.Sig) && IsProbablyStringID(DataPtr,4);
+			bool IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr,4);
 
 			if (IsLocalizedField)
 			{
