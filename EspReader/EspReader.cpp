@@ -50,6 +50,8 @@ extern "C"
 	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 
+	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
+
 	SSELex_API void C_Clear();
 	SSELex_API void C_Close();
 }
@@ -885,6 +887,49 @@ int main()
 	WaitForExit();
 
 	return 0;
+}
+
+bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data)
+{
+	std::string strRecordSig = RecordSig ? RecordSig : "";
+	std::string strSubSig = SubSig ? SubSig : "";
+	std::string strNewData = NewUtf8Data ? NewUtf8Data : "";
+
+	for (auto& Rec : Data->Records)
+	{
+		if (Rec.FormID == FormID && Rec.Sig == strRecordSig)
+		{
+			for (auto& Sub : Rec.SubRecords)
+			{
+				if (Sub.Sig == strSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
+				{
+					Sub.Data.assign(strNewData.begin(), strNewData.end());
+					Sub.StringID = 0;
+					Sub.IsLocalized = false;
+					return true;
+				}
+			}
+		}
+	}
+
+	for (auto& Rec : Data->CellRecords)
+	{
+		if (Rec.FormID == FormID && Rec.Sig == strRecordSig)
+		{
+			for (auto& Sub : Rec.SubRecords)
+			{
+				if (Sub.Sig == strSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
+				{
+					Sub.Data.assign(strNewData.begin(), strNewData.end());
+					Sub.StringID = 0;
+					Sub.IsLocalized = false;
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
 }
 
 const EspRecord* GetRecord(char* Key)
