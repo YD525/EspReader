@@ -308,9 +308,11 @@ public:
 	uint32_t Flags;
 	std::vector<SubRecordData> SubRecords;
 	std::unordered_map<std::string, int> TotalOccurrenceCount;
+	uint8_t LastEPFT;
+	bool HasEPFT;
 
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
-		: Sig(S, 4), FormID(FID), Flags(FL)
+		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false)
 	{
 	}
 
@@ -320,6 +322,8 @@ public:
 		, Flags(other.Flags)
 		, SubRecords(other.SubRecords)
 		, TotalOccurrenceCount(other.TotalOccurrenceCount)
+		, LastEPFT(other.LastEPFT)     
+		, HasEPFT(other.HasEPFT)       
 	{
 	}
 
@@ -332,6 +336,8 @@ public:
 			Flags = other.Flags;
 			SubRecords = other.SubRecords;
 			TotalOccurrenceCount = other.TotalOccurrenceCount;
+			LastEPFT = other.LastEPFT;
+	        HasEPFT = other.HasEPFT;
 		}
 		return *this;
 	}
@@ -471,6 +477,13 @@ public:
 		Sub.OccurrenceIndex = CurrentOccurrence;
 		Sub.GlobalIndex = static_cast<int>(SubRecords.size());
 
+		//===== PERK Special Handling: Recording EPFT Value =====
+		if (Sig == "PERK" && Sub.Sig == "EPFT" && DataPtr && Size >= 1)
+		{
+			LastEPFT = DataPtr[0];
+			HasEPFT = true;
+		}
+
 		if (DataPtr && Size > 0)
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
@@ -494,6 +507,16 @@ public:
 
 		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
 		{
+			if (Sig == "PERK" && Sub.Sig == "EPFD")
+			{
+				// EPFD is a string only when EPFT = 6 or 7.
+				if (!HasEPFT || (LastEPFT != 6 && LastEPFT != 7))
+				{
+					//Not a string type, skipping.
+					return;
+				}
+			}
+
 			if (CanTranslateSub(*this, Sub))
 			{
 				SubRecords.push_back(Sub);
