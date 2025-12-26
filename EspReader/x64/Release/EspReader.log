@@ -99,19 +99,19 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(835,6): warning C4
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(34,18):
       see previous definition of 'FreeSearchResults'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(894,6): warning C4273: 'C_ModifySubRecordByPtr': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(932,6): warning C4273: 'C_ModifySubRecordByOffset': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(53,18):
-      see previous definition of 'C_ModifySubRecordByPtr'
+      see previous definition of 'C_ModifySubRecordByOffset'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(912,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(937,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(54,18):
       see previous definition of 'C_ModifySubRecord'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(957,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(982,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(55,18):
       see previous definition of 'C_SaveEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(984,6): warning C4273: 'C_Clear': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1009,6): warning C4273: 'C_Clear': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(57,18):
       see previous definition of 'C_Clear'
   
@@ -121,7 +121,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(984,6): warning C4
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
   Previous IPDB not found, fall back to full compilation.
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(897): warning C4717: 'C_ModifySubRecordByPtr': recursive on all control paths, function will cause runtime stack overflow
-  All 2225 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 2241 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll

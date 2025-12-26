@@ -50,7 +50,7 @@ extern "C"
 	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 
-	SSELex_API bool C_ModifySubRecordByPtr(void* SubRecordPtr, const char* NewUtf8Data);
+	SSELex_API bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
 	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
 	SSELex_API bool C_SaveEsp(const char* Utf8Path);
 
@@ -892,21 +892,46 @@ int main()
 }
 
 //Quick Modify Data
-bool ModifySubRecordByPtr(SubRecordData* IntPtr, const char* Utf8Str)
+//vector The pointer will be reallocated... damn it.
+bool ModifySubRecordByOffset(int IsCell,int RecordOffset,int SubOffset,const char* NewUtf8Data)
 {
-	if (!IntPtr || !Utf8Str) return false;
+	if (!Data)
+		return false;
 
-	std::string NewUtf8Str(Utf8Str);
+	std::vector<EspRecord>& Records =
+		(IsCell == 1) ? Data->CellRecords : Data->Records;
 
-	IntPtr->Data.assign(NewUtf8Str.begin(), NewUtf8Str.end());
-	IntPtr->StringID = 0;
-	IntPtr->IsLocalized = false;
+	if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
+		return false;
+
+	EspRecord& Rec = Records[RecordOffset];
+
+	if (SubOffset < 0 || SubOffset >= (int)Rec.SubRecords.size())
+		return false;
+
+	SubRecordData& Sub = Rec.SubRecords[SubOffset];
+
+	if (NewUtf8Data)
+	{
+		Sub.Data.assign(
+			NewUtf8Data,
+			NewUtf8Data + std::strlen(NewUtf8Data));
+	}
+	else
+	{
+		Sub.Data.clear();
+	}
+
+	Sub.StringID = 0;
+	Sub.IsLocalized = false;
+
+	return true;
 }
 
 
-bool C_ModifySubRecordByPtr(void* SubRecordPtr, const char* NewUtf8Data)
+bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
 {
-	return ModifySubRecordByPtr((SubRecordData*)SubRecordPtr, NewUtf8Data);
+	return ModifySubRecordByOffset(IsCell, RecordOffset, SubOffset, NewUtf8Data);
 }
 
 bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data)
