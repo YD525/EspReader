@@ -50,6 +50,7 @@ extern "C"
 	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 
+	SSELex_API bool C_ModifySubRecordByPtr(void* SubRecordPtr, const char* NewUtf8Data);
 	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
 	SSELex_API bool C_SaveEsp(const char* Utf8Path);
 
@@ -888,6 +889,24 @@ int main()
 	WaitForExit();
 
 	return 0;
+}
+
+//Quick Modify Data
+bool ModifySubRecordByPtr(SubRecordData* IntPtr, const char* Utf8Str)
+{
+	if (!IntPtr || !Utf8Str) return false;
+
+	std::string NewUtf8Str(Utf8Str);
+
+	IntPtr->Data.assign(NewUtf8Str.begin(), NewUtf8Str.end());
+	IntPtr->StringID = 0;
+	IntPtr->IsLocalized = false;
+}
+
+
+bool C_ModifySubRecordByPtr(void* SubRecordPtr, const char* NewUtf8Data)
+{
+	return ModifySubRecordByPtr((SubRecordData*)SubRecordPtr, NewUtf8Data);
 }
 
 bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data)

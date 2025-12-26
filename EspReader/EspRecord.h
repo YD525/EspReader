@@ -302,7 +302,7 @@ struct SubRecordData
 
 class EspRecord
 {
-public:
+	public:
 	std::string Sig;
 	uint32_t FormID;
 	uint32_t Flags;
@@ -648,7 +648,7 @@ public:
 
 class EspData
 {
-public:
+	public:
 	std::vector<EspRecord> Records;
 	std::unordered_map<std::string, size_t> RecordIndex;
 	std::unordered_set<uint32_t> FormIDs;
