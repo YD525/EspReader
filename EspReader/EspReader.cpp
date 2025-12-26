@@ -51,6 +51,7 @@ extern "C"
 	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 
 	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
+	SSELex_API bool C_SaveEsp(const char* Utf8Path);
 
 	SSELex_API void C_Clear();
 	SSELex_API void C_Close();
@@ -891,20 +892,20 @@ int main()
 
 bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data)
 {
-	std::string strRecordSig = RecordSig ? RecordSig : "";
-	std::string strSubSig = SubSig ? SubSig : "";
-	std::string strNewData = NewUtf8Data ? NewUtf8Data : "";
+	std::string StrRecordSig = RecordSig ? RecordSig : "";
+	std::string StrSubSig = SubSig ? SubSig : "";
+	std::string StrNewData = NewUtf8Data ? NewUtf8Data : "";
 
 	for (auto& Rec : Data->Records)
 	{
-		if (Rec.FormID == FormID && Rec.Sig == strRecordSig)
+		if (Rec.FormID == FormID && Rec.Sig == StrRecordSig)
 		{
 			for (auto& Sub : Rec.SubRecords)
 			{
-				if (Sub.Sig == strSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
+				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
 				{
-					Sub.Data.assign(strNewData.begin(), strNewData.end());
-					Sub.StringID = 0;
+					Sub.Data.assign(StrNewData.begin(), StrNewData.end());
+					Sub.StringID = 0;//If you modify the text directly, it will no longer be supported by stringsfile.
 					Sub.IsLocalized = false;
 					return true;
 				}
@@ -914,13 +915,13 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 
 	for (auto& Rec : Data->CellRecords)
 	{
-		if (Rec.FormID == FormID && Rec.Sig == strRecordSig)
+		if (Rec.FormID == FormID && Rec.Sig == StrRecordSig)
 		{
 			for (auto& Sub : Rec.SubRecords)
 			{
-				if (Sub.Sig == strSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
+				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
 				{
-					Sub.Data.assign(strNewData.begin(), strNewData.end());
+					Sub.Data.assign(StrNewData.begin(), StrNewData.end());
 					Sub.StringID = 0;
 					Sub.IsLocalized = false;
 					return true;
@@ -930,6 +931,15 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 	}
 
 	return false;
+}
+
+bool SaveEsp(const char* SavePath);
+
+bool C_SaveEsp(const char* Utf8Path)
+{
+	if (!Utf8Path) return false;
+
+	return SaveEsp(Utf8Path);
 }
 
 const EspRecord* GetRecord(char* Key)
@@ -1195,6 +1205,7 @@ bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Content
 	return true;
 }
 
+
 bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 {
 	RecordHeader HDR{};
@@ -1207,32 +1218,33 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 	Read(Fin, HDR.Version);
 	Read(Fin, HDR.Unknown);
 
-	// Build lookup key
-	std::string RecordKey(Sig, 4);
-	RecordKey += ":" + std::to_string(HDR.FormID);
-
-	// Search in main Records
-	auto It = Data->RecordIndex.find(RecordKey);
 	EspRecord* Rec = NULL;
 
-	if (It != Data->RecordIndex.end())
+	for (auto& record : Data->Records)
 	{
-		Rec = &Data->Records[It->second];
-	}
-	else
-	{
-		// Search in CellRecords
-		auto CellIt = Data->CellByFormID.find(HDR.FormID);
-		if (CellIt != Data->CellByFormID.end() &&
-			std::memcmp(Sig, "CELL", 4) == 0)
+		if (record.FormID == HDR.FormID &&
+			record.Sig == std::string(Sig, 4))
 		{
-			Rec = &Data->CellRecords[CellIt->second];
+			Rec = &record;
+			break;
+		}
+	}
+
+	if (!Rec)
+	{
+		for (auto& record : Data->CellRecords)
+		{
+			if (record.FormID == HDR.FormID &&
+				record.Sig == std::string(Sig, 4))
+			{
+				Rec = &record;
+				break;
+			}
 		}
 	}
 
 	if (Rec != NULL)
 	{
-		// Modified record
 		std::vector<uint8_t> OriginalData(HDR.DataSize);
 		Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
 
@@ -1295,7 +1307,6 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 	}
 	else
 	{
-		// Unmodified record - byte-perfect copy
 		uint32_t TotalSize = 24 + HDR.DataSize;
 		std::vector<uint8_t> CompleteRecord(TotalSize);
 
@@ -1314,6 +1325,7 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 
 	return true;
 }
+
 
 bool SaveEsp(const char* SavePath)
 {
