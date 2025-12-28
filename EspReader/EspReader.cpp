@@ -916,10 +916,8 @@ bool ModifySubRecordByOffset(int IsCell,int RecordOffset,int SubOffset,const cha
 		Sub.Data.assign(
 			NewUtf8Data,
 			NewUtf8Data + std::strlen(NewUtf8Data));
-	}
-	else
-	{
-		Sub.Data.clear();
+
+		Sub.IsModify = true;
 	}
 
 	Sub.StringID = 0;
@@ -948,9 +946,15 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 			{
 				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
 				{
-					Sub.Data.assign(StrNewData.begin(), StrNewData.end());
+					if (NewUtf8Data)
+					{
+						Sub.Data.assign(StrNewData.begin(), StrNewData.end());
+						Sub.IsModify = true;
+					}
+
 					Sub.StringID = 0;//If you modify the text directly, it will no longer be supported by stringsfile.
 					Sub.IsLocalized = false;
+					
 					return true;
 				}
 			}
@@ -1029,11 +1033,16 @@ std::vector<uint8_t> ModifySubRecords(
 	std::vector<uint8_t> Result;
 	size_t Offset = 0;
 
+	// Build a map of modified subrecords only
 	std::unordered_map<std::string, std::unordered_map<int, const SubRecordData*>> ModifiedSubsMap;
 	for (const auto& Sub : ModifiedRecord->SubRecords)
 	{
-		std::string Key = Sub.Sig;
-		ModifiedSubsMap[Key][Sub.OccurrenceIndex] = &Sub;
+		// *** CRITICAL: Only add subrecords that have been actually modified ***
+		if (Sub.IsModify)
+		{
+			std::string Key = Sub.Sig;
+			ModifiedSubsMap[Key][Sub.OccurrenceIndex] = &Sub;
+		}
 	}
 
 	std::unordered_map<std::string, int> CurrentOccurrence;
@@ -1050,9 +1059,9 @@ std::vector<uint8_t> ModifySubRecords(
 		}
 
 		std::string SubSig(SH.Sig, 4);
-
 		int Occurrence = CurrentOccurrence[SubSig]++;
 
+		// Check if this subrecord has been modified
 		bool IsModified = false;
 		const SubRecordData* ModifiedSub = nullptr;
 
@@ -1063,12 +1072,17 @@ std::vector<uint8_t> ModifySubRecords(
 			if (OccIt != SigIt->second.end())
 			{
 				ModifiedSub = OccIt->second;
-				IsModified = true;
+				// *** Double check: Ensure IsModify is true ***
+				if (ModifiedSub->IsModify)
+				{
+					IsModified = true;
+				}
 			}
 		}
 
 		if (IsModified && ModifiedSub)
 		{
+			// Use modified data
 			if (ModifiedSub->Data.size() > 0xFFFF)
 			{
 				std::cerr << "Error: Subrecord " << SubSig << " size exceeds 65535 bytes\n";
@@ -1088,6 +1102,7 @@ std::vector<uint8_t> ModifySubRecords(
 		}
 		else
 		{
+			// Use original data (copy from original ESP file)
 			Result.insert(Result.end(),
 				OriginalData.begin() + Offset,
 				OriginalData.begin() + Offset + sizeof(SubRecordHeader) + SH.Size);

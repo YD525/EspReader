@@ -1,9 +1,7 @@
 =================================================
-
 Copyright (c) 2025
 YD525 (https://github.com/YD525)
 Cutleast (https://github.com/cutleast)
-
 =================================================
 
 ------------------------------------------------------------
@@ -15,15 +13,13 @@ the identity of the user.
 - The original authors (YD525 and Cutleast) are granted special
   author exceptions as described in Section 2.
 - All other individuals or entities ("Third Parties") are subject
-  to the GNU General Public License version 3.0 (GPL-3.0), as
-  described in Section 3.
+  to the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License (CC BY-NC-ND 4.0), as described in Section 3.
 
 ------------------------------------------------------------
 2. Author Exception (Original Authors Only)
 ------------------------------------------------------------
 YD525 and Cutleast, as the original authors and joint copyright
-holders, are granted unrestricted rights to use, copy, modify,
-merge, publish, distribute, sublicense, and/or commercialize this
+holders, are granted unrestricted rights to use, copy, modify, merge, publish, distribute, sublicense, and/or commercialize this
 software, with or without attribution, under any license of their
 choice.
 
@@ -31,19 +27,20 @@ This exception overrides any copyleft, attribution, or distribution
 requirements that would otherwise apply.
 
 ------------------------------------------------------------
-3. GPL-3.0 License Requirement (Third Parties)
+3. CC BY-NC-ND 4.0 License Requirement (Third Parties)
 ------------------------------------------------------------
 All individuals or entities other than YD525 and Cutleast ("Third
-Parties") are permitted to use, copy, modify, and distribute this
-software ONLY under the terms of the GNU General Public License
-version 3.0 (GPL-3.0).
+Parties") are permitted to use, copy, and share this software ONLY
+under the terms of the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License (CC BY-NC-ND 4.0).
 
 Accordingly, Third Parties MUST:
 
-- License derivative works under GPL-3.0
-- Provide complete corresponding source code
-- Retain copyright notices and this license document
-- Grant the same freedoms to downstream recipients
+- Retain clear attribution to BOTH original authors:
+  - YD525
+  - Cutleast
+- Use the software for non-commercial purposes only
+- Not modify, adapt, or create derivative works
+- Include this license document with any sharing or redistribution
 
 ------------------------------------------------------------
 4. Attribution & No Misrepresentation
@@ -60,13 +57,12 @@ without explicit prior written permission.
 ------------------------------------------------------------
 5. License Precedence & Interpretation
 ------------------------------------------------------------
-For Third Parties, the terms of the GNU GPL version 3.0 shall govern
-all use, modification, and distribution of this software.
+For Third Parties, the terms of the CC BY-NC-ND 4.0 License shall govern
+all use, sharing, and redistribution of this software.
 
 For YD525 and Cutleast, the Author Exception in Section 2 shall
 govern.
 
 In the event of any ambiguity, this document shall take precedence
 over any default license assumptions.
-
 =================================================

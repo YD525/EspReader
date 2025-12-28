@@ -273,8 +273,9 @@ struct SubRecordData
 	uint32_t StringID;
 	int OccurrenceIndex;
 	int GlobalIndex;
+	bool IsModify;
 
-	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), GlobalIndex(0) {}
+	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), GlobalIndex(0), IsModify(false) {}
 
 	std::string GetString() const
 	{
