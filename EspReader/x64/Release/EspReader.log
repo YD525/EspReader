@@ -111,15 +111,19 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(858,6): warning C4
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(37,18):
       see previous definition of 'FreeSearchResults'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(959,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(953,6): warning C4273: 'C_ModifySubRecordByOffset': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(58,18):
+      see previous definition of 'C_ModifySubRecordByOffset'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(958,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(59,18):
       see previous definition of 'C_ModifySubRecord'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1010,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1009,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(60,18):
       see previous definition of 'C_SaveEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1037,6): warning C4273: 'C_Clear': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1036,6): warning C4273: 'C_Clear': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(62,18):
       see previous definition of 'C_Clear'
   
@@ -128,6 +132,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1037,6): warning C
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 2152 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 2168 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll

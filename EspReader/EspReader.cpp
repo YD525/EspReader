@@ -55,7 +55,7 @@ extern "C"
 	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 
-	//SSELex_API bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
+	SSELex_API bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
 	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
 	SSELex_API bool C_SaveEsp(const char* Utf8Path);
 
@@ -63,16 +63,16 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string ESPREADER_VERSION = "1.0.1";
+static const std::string Version = "1.0.2";
 
 const char* C_GetVersion()
 {
-	return ESPREADER_VERSION.c_str();
+	return Version.c_str();
 }
 
 int C_GetVersionLength()
 {
-	return static_cast<int>(ESPREADER_VERSION.length());
+	return static_cast<int>(Version.length());
 }
 
 
@@ -916,45 +916,44 @@ int main()
 
 //Quick Modify Data
 //vector The pointer will be reallocated... damn it.
-//In the future, support will be provided... I forgot to count the SubOffset.
-//bool ModifySubRecordByOffset(int IsCell,int RecordOffset,int SubOffset,const char* NewUtf8Data)
-//{
-//	if (!Data)
-//		return false;
-//
-//	std::vector<EspRecord>& Records =
-//		(IsCell == 1) ? Data->CellRecords : Data->Records;
-//
-//	if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
-//		return false;
-//
-//	EspRecord& Rec = Records[RecordOffset];
-//
-//	if (SubOffset < 0 || SubOffset >= (int)Rec.SubRecords.size())
-//		return false;
-//
-//	SubRecordData& Sub = Rec.SubRecords[SubOffset];
-//
-//	if (NewUtf8Data)
-//	{
-//		Sub.Data.assign(
-//			NewUtf8Data,
-//			NewUtf8Data + std::strlen(NewUtf8Data));
-//
-//		Sub.IsModify = true;
-//	}
-//
-//	Sub.StringID = 0;
-//	Sub.IsLocalized = false;
-//
-//	return true;
-//}
+bool ModifySubRecordByOffset(int IsCell,int RecordOffset,int SubOffset,const char* NewUtf8Data)
+{
+	if (!Data)
+		return false;
 
-//
-//bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
-//{
-//	return ModifySubRecordByOffset(IsCell, RecordOffset, SubOffset, NewUtf8Data);
-//}
+	std::vector<EspRecord>& Records =
+		(IsCell == 1) ? Data->CellRecords : Data->Records;
+
+	if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
+		return false;
+
+	EspRecord& Rec = Records[RecordOffset];
+
+	if (SubOffset < 0 || SubOffset >= (int)Rec.SubRecords.size())
+		return false;
+
+	SubRecordData& Sub = Rec.SubRecords[SubOffset];
+
+	if (NewUtf8Data)
+	{
+		Sub.Data.assign(
+			NewUtf8Data,
+			NewUtf8Data + std::strlen(NewUtf8Data));
+
+		Sub.IsModify = true;
+	}
+
+	Sub.StringID = 0;
+	Sub.IsLocalized = false;
+
+	return true;
+}
+
+
+bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
+{
+	return ModifySubRecordByOffset(IsCell, RecordOffset, SubOffset, NewUtf8Data);
+}
 
 bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int Index, const char* NewUtf8Data)
 {
