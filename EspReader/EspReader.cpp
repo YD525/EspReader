@@ -24,6 +24,9 @@
 
 extern "C" 
 {
+	SSELex_API const char* C_GetVersion();
+	SSELex_API int C_GetVersionLength();
+
 	SSELex_API void C_Init();
 	SSELex_API void C_InitDefaultFilter();
 	SSELex_API int C_SetDefaultFilter();
@@ -57,6 +60,19 @@ extern "C"
 	SSELex_API void C_Clear();
 	SSELex_API void C_Close();
 }
+
+static const std::string ESPREADER_VERSION = "1.0.0";
+
+const char* C_GetVersion()
+{
+	return ESPREADER_VERSION.c_str();
+}
+
+int C_GetVersionLength()
+{
+	return static_cast<int>(ESPREADER_VERSION.length());
+}
+
 
 const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index)
 {
