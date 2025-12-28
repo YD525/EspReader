@@ -253,7 +253,6 @@ bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
 }
 
 RecordFilter* TranslateFilter;
-StringsManager* g_StringsManager = nullptr;
 
 // Parse subrecords from memory buffer with filter
 void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
@@ -787,7 +786,7 @@ int C_SetDefaultFilter()
 
 void Init()
 {
-	g_StringsManager = new StringsManager();
+	
 }
 
 void WaitForExit()

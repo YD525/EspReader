@@ -8,7 +8,15 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "TextHelper.h"
-#include "StringsFileHelper.h"
+#include <algorithm>
+#include <cctype>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#include <dirent.h>
+#endif
 
 // ===== Record Filter Configuration =====
 class RecordFilter
@@ -68,9 +76,6 @@ private:
 	std::unordered_map<std::string, std::unordered_set<std::string>> SubRecordFilters_;
 };
 
-
-// Global strings manager - shared by all records
-extern StringsManager* g_StringsManager;
 
 inline std::string Windows1252ToUTF8(const uint8_t* Data, size_t Size)
 {
@@ -283,10 +288,6 @@ struct SubRecordData
 
 		if (IsLocalized)
 		{
-			if (g_StringsManager && g_StringsManager->HasString(StringID))
-			{
-				return g_StringsManager->GetString(StringID);
-			}
 			return "<StringID:" + std::to_string(StringID) + ">";
 		}
 
