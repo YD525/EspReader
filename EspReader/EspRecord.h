@@ -590,6 +590,11 @@ class EspRecord
 				}
 			}
 
+			if (Sub.IsLocalized == true)
+			{
+				SubRecords.push_back(Sub);
+			}
+			else
 			if (CanTranslateSub(*this, Sub))
 			{
 				SubRecords.push_back(Sub);

@@ -61,7 +61,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string ESPREADER_VERSION = "1.0.0";
+static const std::string ESPREADER_VERSION = "1.0.1";
 
 const char* C_GetVersion()
 {
