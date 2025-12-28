@@ -459,17 +459,17 @@ class EspRecord
 
 		if (id > 0x000FFFFF) return false;
 
-		bool allPrintable = true;
+		bool AllPrintable = true;
 		for (int i = 0; i < 4; ++i)
 		{
 			if (!isprint(data[i]))
 			{
-				allPrintable = false;
+				AllPrintable = false;
 				break;
 			}
 		}
 
-		return !allPrintable;
+		return !AllPrintable;
 	}
 
 	inline bool IsProbablyString(const uint8_t* data, size_t size)
@@ -565,9 +565,9 @@ class EspRecord
 
 			if (IsLocalizedField)
 			{
-				uint32_t stringID = 0;
-				std::memcpy(&stringID, DataPtr, sizeof(uint32_t));
-				Sub.StringID = stringID;
+				uint32_t StringID = 0;
+				std::memcpy(&StringID, DataPtr, sizeof(uint32_t));
+				Sub.StringID = StringID;
 
 				Sub.IsLocalized = true;
 			}
