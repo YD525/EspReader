@@ -277,10 +277,10 @@ struct SubRecordData
 	bool IsLocalized;
 	uint32_t StringID;
 	int OccurrenceIndex;
-	int GlobalIndex;
+	int Index;
 	bool IsModify;
 
-	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), GlobalIndex(0), IsModify(false) {}
+	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), Index(0), IsModify(false) {}
 
 	std::string GetString() const
 	{
@@ -312,9 +312,10 @@ class EspRecord
 	std::unordered_map<std::string, int> TotalOccurrenceCount;
 	uint8_t LastEPFT;
 	bool HasEPFT;
+	int Index;
 
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
-		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false)
+		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0)
 	{
 	}
 
@@ -326,7 +327,9 @@ class EspRecord
 		, TotalOccurrenceCount(other.TotalOccurrenceCount)
 		, LastEPFT(other.LastEPFT)     
 		, HasEPFT(other.HasEPFT)       
+		, Index(other.Index)
 	{
+
 	}
 
 	EspRecord& operator=(const EspRecord& other)
@@ -340,6 +343,7 @@ class EspRecord
 			TotalOccurrenceCount = other.TotalOccurrenceCount;
 			LastEPFT = other.LastEPFT;
 	        HasEPFT = other.HasEPFT;
+			Index = other.Index;
 		}
 		return *this;
 	}
@@ -548,7 +552,7 @@ class EspRecord
 		TotalOccurrenceCount[Sub.Sig]++;
 
 		Sub.OccurrenceIndex = CurrentOccurrence;
-		Sub.GlobalIndex = static_cast<int>(SubRecords.size());
+		Sub.Index = static_cast<int>(SubRecords.size());
 
 		//===== PERK Special Handling: Recording EPFT Value =====
 		if (Sig == "PERK" && Sub.Sig == "EPFT" && DataPtr && Size >= 1)
@@ -869,7 +873,11 @@ class EspData
 		// Special handling for CELL
 		if (Rec.IsCell())
 		{
-			const size_t CellIndex = CellRecords.size();
+			size_t Size = CellRecords.size();
+
+			Rec.Index = static_cast<int>(Size);
+
+			const size_t CellIndex = Size;
 			CellRecords.push_back(Rec);
 			CellByFormID[Rec.FormID] = CellIndex;
 
@@ -883,6 +891,8 @@ class EspData
 		{
 			if (Filter.ShouldParseRecordWithSub(Rec.Sig, ""))
 			{
+				Rec.Index = static_cast<int>(Records.size());
+
 				Records.push_back(Rec);
 			}
 		}

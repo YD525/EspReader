@@ -39,11 +39,13 @@ extern "C"
 	SSELex_API const char* C_GetRecordSig(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFormID(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFlags(EspRecord* record);
+	SSELex_API int C_GetRecordIndex(EspRecord* record);
+
 	SSELex_API int C_GetSubRecordCount(EspRecord* record);
 
 	SSELex_API const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index);
 	SSELex_API int C_SubRecordData_GetOccurrenceIndex(const SubRecordData* subRecord);
-	SSELex_API int C_SubRecordData_GetGlobalIndex(const SubRecordData* subRecord);
+	SSELex_API int C_SubRecordData_GetIndex(const SubRecordData* subRecord);
 	SSELex_API const char* C_SubRecordData_GetSig(const SubRecordData* subRecord);
 	SSELex_API const char* C_SubRecordData_GetString(const SubRecordData* subRecord);
 	SSELex_API bool C_SubRecordData_IsLocalized(const SubRecordData* subRecord);
@@ -118,9 +120,9 @@ int C_SubRecordData_GetOccurrenceIndex(const SubRecordData* subRecord)
 	return subRecord ? subRecord->OccurrenceIndex : -1;
 }
 
-int C_SubRecordData_GetGlobalIndex(const SubRecordData* subRecord)
+int C_SubRecordData_GetIndex(const SubRecordData* subRecord)
 {
-	return subRecord ? subRecord->GlobalIndex : -1;
+	return subRecord ? subRecord->Index : -1;
 }
 
 const char* C_SubRecordData_GetSig(const SubRecordData* subRecord)
@@ -162,6 +164,12 @@ bool C_SubRecordData_GetData(const SubRecordData* subRecord, uint8_t* buffer, in
 
 	std::memcpy(buffer, data.data(), data.size());
 	return true;
+}
+
+int C_GetRecordIndex(EspRecord* record)
+{
+	if (!record) return 0;
+	return record->Index;
 }
 
 const char* C_GetRecordSig(EspRecord* record)
@@ -948,7 +956,7 @@ int main()
 //	return ModifySubRecordByOffset(IsCell, RecordOffset, SubOffset, NewUtf8Data);
 //}
 
-bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data)
+bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int Index, const char* NewUtf8Data)
 {
 	std::string StrRecordSig = RecordSig ? RecordSig : "";
 	std::string StrSubSig = SubSig ? SubSig : "";
@@ -960,7 +968,7 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 		{
 			for (auto& Sub : Rec.SubRecords)
 			{
-				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
+				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
 				{
 					if (NewUtf8Data)
 					{
@@ -983,7 +991,7 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 		{
 			for (auto& Sub : Rec.SubRecords)
 			{
-				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.GlobalIndex == GlobalIndex)
+				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
 				{
 					Sub.Data.assign(StrNewData.begin(), StrNewData.end());
 					Sub.StringID = 0;
