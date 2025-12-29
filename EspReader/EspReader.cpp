@@ -38,6 +38,7 @@ extern "C"
 
 	SSELex_API const char* C_GetRecordSig(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFormID(EspRecord* record);
+	SSELex_API const char* C_GetRecordEditorID(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFlags(EspRecord* record);
 	SSELex_API int C_GetRecordIndex(EspRecord* record);
 
@@ -63,7 +64,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.0.2";
+static const std::string Version = "1.0.3";
 
 const char* C_GetVersion()
 {
@@ -182,6 +183,15 @@ uint32_t C_GetRecordFormID(EspRecord* record)
 {
 	if (!record) return 0;
 	return record->FormID;
+}
+
+const char* C_GetRecordEditorID(EspRecord* record)
+{
+	if (!record) return nullptr;
+
+	static std::string buffer;
+	buffer = record->EditorID;
+	return buffer.c_str();
 }
 
 uint32_t C_GetRecordFlags(EspRecord* record)

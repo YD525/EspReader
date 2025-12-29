@@ -313,9 +313,10 @@ class EspRecord
 	uint8_t LastEPFT;
 	bool HasEPFT;
 	int Index;
+    std::string EditorID;
 
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
-		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0)
+		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0),EditorID("")
 	{
 	}
 
@@ -328,6 +329,7 @@ class EspRecord
 		, LastEPFT(other.LastEPFT)     
 		, HasEPFT(other.HasEPFT)       
 		, Index(other.Index)
+		, EditorID(other.EditorID)
 	{
 
 	}
@@ -344,6 +346,7 @@ class EspRecord
 			LastEPFT = other.LastEPFT;
 	        HasEPFT = other.HasEPFT;
 			Index = other.Index;
+			EditorID = other.EditorID;
 		}
 		return *this;
 	}
@@ -580,6 +583,16 @@ class EspRecord
 				Sub.IsLocalized = false;
 				Sub.StringID = 0;
 			}
+		}
+
+		bool IsEditorID = (Sub.Sig == "EDID");
+		if (IsEditorID)
+		{
+			std::string EditorIDValue = RawString::FromBytes(Sub.Data).ToUTF8String();
+
+			this->EditorID = EditorIDValue;
+
+			return;
 		}
 
 		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
