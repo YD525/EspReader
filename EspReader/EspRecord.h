@@ -585,8 +585,7 @@ class EspRecord
 			}
 		}
 
-		bool IsEditorID = (Sub.Sig == "EDID");
-		if (IsEditorID)
+		if (Sub.Sig == "EDID")
 		{
 			std::string EditorIDValue = RawString::FromBytes(Sub.Data).ToUTF8String();
 
