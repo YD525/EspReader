@@ -226,13 +226,26 @@ public:
 		case String:
 		default:
 		{
-			if (IsLikelyUTF8(Bytes, Size))
+			size_t ActualSize = 0;
+			for (size_t i = 0; i < Size; ++i)
 			{
-				return RawString(std::string(reinterpret_cast<const char*>(Bytes), Size));
+				if (Bytes[i] == 0)
+				{
+					ActualSize = i;
+					break;
+				}
+			}
+
+			if (ActualSize == 0)
+				ActualSize = Size;
+
+			if (IsLikelyUTF8(Bytes, ActualSize))
+			{
+				return RawString(std::string(reinterpret_cast<const char*>(Bytes), ActualSize));
 			}
 			else
 			{
-				return RawString(Windows1252ToUTF8(Bytes, Size));
+				return RawString(Windows1252ToUTF8(Bytes, ActualSize));
 			}
 		}
 		}

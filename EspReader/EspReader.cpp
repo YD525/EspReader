@@ -888,7 +888,7 @@ void FreeSearchResults(EspRecord** Arr, int Count)
 
 int main()
 {
-	SetConsoleOutputCP(CP_UTF8);
+	//SetConsoleOutputCP(CP_UTF8);
 
 	Init();
 
