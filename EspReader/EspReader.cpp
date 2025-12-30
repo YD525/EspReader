@@ -36,7 +36,7 @@ extern "C"
 	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);
 	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
 
-	SSELex_API const char* C_GetRecordSig(EspRecord* record);
+	SSELex_API int C_GetRecordSig(EspRecord* record, uint8_t* buffer, int bufferSize);
 	SSELex_API uint32_t C_GetRecordFormID(EspRecord* record);
 	SSELex_API const char* C_GetRecordEditorID(EspRecord* record);
 	SSELex_API uint32_t C_GetRecordFlags(EspRecord* record);
@@ -82,6 +82,21 @@ const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index)
 	if (!record || index < 0 || index >= record->SubRecords.size())
 		return nullptr;
 	return &record->SubRecords[index];
+}
+
+int C_GetRecordSig(EspRecord* record, uint8_t* buffer, int bufferSize)
+{
+	if (!record) return -1;
+
+	int len = static_cast<int>(record->Sig.size());
+
+	if (buffer && bufferSize > len)
+	{
+		std::memcpy(buffer, record->Sig.c_str(), len);
+		buffer[len] = 0;
+	}
+
+	return len;
 }
 
 int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
@@ -171,12 +186,6 @@ int C_GetRecordIndex(EspRecord* record)
 {
 	if (!record) return 0;
 	return record->Index;
-}
-
-const char* C_GetRecordSig(EspRecord* record)
-{
-	if (!record) return nullptr;
-	return record->Sig.c_str();
 }
 
 uint32_t C_GetRecordFormID(EspRecord* record)
