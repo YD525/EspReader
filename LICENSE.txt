@@ -4,6 +4,13 @@ YD525 (https://github.com/YD525)
 Cutleast (https://github.com/cutleast)
 =================================================
 
+Exceptions:
+The following components are NOT covered by this license and are subject to their
+own respective licenses:
+
+- miniz
+License https://github.com/richgel999/miniz?tab=MIT-1-ov-file
+
 ------------------------------------------------------------
 1. License Overview
 ------------------------------------------------------------
