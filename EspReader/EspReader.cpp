@@ -1443,7 +1443,18 @@ bool SaveEsp(const char* SavePath)
 		return false;
 	}
 
-	std::ofstream Fout(SavePath, std::ios::binary);
+	int Wlen = MultiByteToWideChar(CP_UTF8, 0, SavePath, -1, NULL, 0);
+	if (Wlen == 0)
+	{
+		Fin.close();
+		return false;
+	}
+
+	//I forgot that string is ANSI... Sorry.
+	std::wstring WSavePath(Wlen - 1, 0);
+	MultiByteToWideChar(CP_UTF8, 0, SavePath, -1, &WSavePath[0], Wlen);
+
+	std::ofstream Fout(WSavePath, std::ios::binary);
 	if (!Fout.is_open())
 	{
 		//std::cerr << "Error: Cannot create output ESP file: " << SavePath << "\n";
