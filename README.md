@@ -11,7 +11,7 @@ Please refer to their respective LICENSE files for more information.
 
 ---
 
-EspReader is designed to replace the SSELex EspReader.cs class.
+EspReader is designed to replace the SSE Lexicon EspReader.cs class.
 
 > ⚠️ Note: This library is still under active development.
 
