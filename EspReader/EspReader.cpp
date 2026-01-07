@@ -64,7 +64,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.0.3";
+static const std::string Version = "1.1.3";
 
 const char* C_GetVersion()
 {
@@ -1068,98 +1068,228 @@ void Close()
 
 #pragma region SaveFunc
 
-std::vector<uint8_t> ModifySubRecords(
-	const std::vector<uint8_t>& OriginalData,
-	EspRecord* ModifiedRecord)
-{
-	std::vector<uint8_t> Result;
-	size_t Offset = 0;
+bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4]);
+bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize);
 
-	// Build a map of modified subrecords only
-	std::unordered_map<std::string, std::unordered_map<int, const SubRecordData*>> ModifiedSubsMap;
-	for (const auto& Sub : ModifiedRecord->SubRecords)
+struct OriginalSubRecord
+{
+	std::string Sig;
+	int OccurrenceIndex;
+	size_t OffsetInData; 
+	uint16_t Size;
+};
+
+std::vector<OriginalSubRecord> ParseOriginalSubRecords(const uint8_t* data, size_t dataSize)
+{
+	std::vector<OriginalSubRecord> result;
+	std::unordered_map<std::string, int> occurrenceMap;
+
+	size_t offset = 0;
+	while (offset + sizeof(SubRecordHeader) <= dataSize)
 	{
-		// *** CRITICAL: Only add subrecords that have been actually modified ***
-		if (Sub.IsModify)
+		const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
+		if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
+
+		OriginalSubRecord osr;
+		osr.Sig = std::string(sub->Sig, 4);
+		osr.OccurrenceIndex = occurrenceMap[osr.Sig]++;
+		osr.OffsetInData = offset;
+		osr.Size = sub->Size;
+
+		result.push_back(osr);
+		offset += sizeof(SubRecordHeader) + sub->Size;
+	}
+
+	return result;
+}
+
+const SubRecordData* FindModifiedSubRecord(
+	const std::string& ParentSig,
+	uint32_t FormID,
+	const std::string& ChildSig,
+	int OccurrenceIndex)
+{
+	if (!TranslateFilter->ShouldParseRecordWithSub(ParentSig, ChildSig))
+	{
+		return nullptr;  
+	}
+
+	for (auto& rec : Data->Records)
+	{
+		if (rec.FormID == FormID && rec.Sig == ParentSig)
 		{
-			std::string Key = Sub.Sig;
-			ModifiedSubsMap[Key][Sub.OccurrenceIndex] = &Sub;
+			for (auto& sub : rec.SubRecords)
+			{
+				if (sub.Sig == ChildSig &&
+					sub.OccurrenceIndex == OccurrenceIndex &&
+					sub.IsModify)  
+				{
+					return &sub;
+				}
+			}
+			return nullptr;  
 		}
 	}
 
-	std::unordered_map<std::string, int> CurrentOccurrence;
-
-	while (Offset + sizeof(SubRecordHeader) <= OriginalData.size())
+	for (auto& rec : Data->CellRecords)
 	{
-		SubRecordHeader SH;
-		std::memcpy(&SH, OriginalData.data() + Offset, sizeof(SH));
-
-		if (Offset + sizeof(SubRecordHeader) + SH.Size > OriginalData.size())
+		if (rec.FormID == FormID && rec.Sig == ParentSig)
 		{
-			std::cerr << "Warning: Corrupted subrecord data at offset " << Offset << "\n";
-			break;
-		}
-
-		std::string SubSig(SH.Sig, 4);
-		int Occurrence = CurrentOccurrence[SubSig]++;
-
-		// Check if this subrecord has been modified
-		bool IsModified = false;
-		const SubRecordData* ModifiedSub = nullptr;
-
-		auto SigIt = ModifiedSubsMap.find(SubSig);
-		if (SigIt != ModifiedSubsMap.end())
-		{
-			auto OccIt = SigIt->second.find(Occurrence);
-			if (OccIt != SigIt->second.end())
+			for (auto& sub : rec.SubRecords)
 			{
-				ModifiedSub = OccIt->second;
-				// *** Double check: Ensure IsModify is true ***
-				if (ModifiedSub->IsModify)
+				if (sub.Sig == ChildSig &&
+					sub.OccurrenceIndex == OccurrenceIndex &&
+					sub.IsModify)
 				{
-					IsModified = true;
+					return &sub;
 				}
 			}
+			return nullptr;
 		}
+	}
 
-		if (IsModified && ModifiedSub)
+	return nullptr;  
+}
+
+std::vector<uint8_t> ModifySubRecordsWithFilter(
+	const uint8_t* originalData,
+	size_t dataSize,
+	const std::string& parentSig,
+	uint32_t formID)
+{
+	std::vector<uint8_t> result;
+
+	auto originalSubs = ParseOriginalSubRecords(originalData, dataSize);
+
+	size_t offset = 0;
+	for (const auto& osr : originalSubs)
+	{
+		const SubRecordHeader* originalHeader =
+			reinterpret_cast<const SubRecordHeader*>(originalData + osr.OffsetInData);
+
+		const SubRecordData* modified = FindModifiedSubRecord(
+			parentSig,
+			formID,
+			osr.Sig,
+			osr.OccurrenceIndex);
+
+		if (modified)
 		{
-			// Use modified data
-			if (ModifiedSub->Data.size() > 0xFFFF)
-			{
-				std::cerr << "Error: Subrecord " << SubSig << " size exceeds 65535 bytes\n";
-				return {};
-			}
+			SubRecordHeader newHeader;
+			std::memcpy(newHeader.Sig, osr.Sig.c_str(), 4);
+			newHeader.Size = static_cast<uint16_t>(modified->Data.size());
 
-			SubRecordHeader NewSH = SH;
-			NewSH.Size = static_cast<uint16_t>(ModifiedSub->Data.size());
+			result.insert(result.end(),
+				reinterpret_cast<uint8_t*>(&newHeader),
+				reinterpret_cast<uint8_t*>(&newHeader) + sizeof(newHeader));
 
-			Result.insert(Result.end(),
-				reinterpret_cast<uint8_t*>(&NewSH),
-				reinterpret_cast<uint8_t*>(&NewSH) + sizeof(NewSH));
-
-			Result.insert(Result.end(),
-				ModifiedSub->Data.begin(),
-				ModifiedSub->Data.end());
+			result.insert(result.end(),
+				modified->Data.begin(),
+				modified->Data.end());
 		}
 		else
 		{
-			// Use original data (copy from original ESP file)
-			Result.insert(Result.end(),
-				OriginalData.begin() + Offset,
-				OriginalData.begin() + Offset + sizeof(SubRecordHeader) + SH.Size);
+			result.insert(result.end(),
+				originalData + osr.OffsetInData,
+				originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
 		}
-
-		Offset += sizeof(SubRecordHeader) + SH.Size;
 	}
 
-	return Result;
+	return result;
 }
 
-bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t RemainingSize);
-bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4]);
-bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize);
-bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4]);
+bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
+{
+	RecordHeader HDR{};
+	std::memcpy(HDR.Sig, Sig, 4);
+
+	Read(Fin, HDR.DataSize);
+	Read(Fin, HDR.Flags);
+	Read(Fin, HDR.FormID);
+	Read(Fin, HDR.VersionCtrl);
+	Read(Fin, HDR.Version);
+	Read(Fin, HDR.Unknown);
+
+	std::vector<uint8_t> OriginalData(HDR.DataSize);
+	Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+
+	std::vector<uint8_t> WorkingData;
+	bool WasCompressed = IsCompressed(HDR);
+
+	if (WasCompressed)
+	{
+		if (HDR.DataSize < 4)
+		{
+			Fout.write(Sig, 4);
+			Fout.write(reinterpret_cast<char*>(&HDR.DataSize), sizeof(HDR.DataSize));
+			Fout.write(reinterpret_cast<char*>(&HDR.Flags), sizeof(HDR.Flags));
+			Fout.write(reinterpret_cast<char*>(&HDR.FormID), sizeof(HDR.FormID));
+			Fout.write(reinterpret_cast<char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
+			Fout.write(reinterpret_cast<char*>(&HDR.Version), sizeof(HDR.Version));
+			Fout.write(reinterpret_cast<char*>(&HDR.Unknown), sizeof(HDR.Unknown));
+			Fout.write(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+			return true;
+		}
+
+		uint32_t UncompressedSize;
+		std::memcpy(&UncompressedSize, OriginalData.data(), 4);
+
+		if (!ZlibDecompress(OriginalData.data() + 4,
+			OriginalData.size() - 4,
+			WorkingData,
+			UncompressedSize))
+		{
+			std::cerr << "Error: Decompression failed for " << std::string(Sig, 4)
+				<< " FormID 0x" << std::hex << HDR.FormID << std::dec << "\n";
+			return false;
+		}
+	}
+	else
+	{
+		WorkingData = OriginalData;
+	}
+
+	std::string ParentSig(Sig, 4);
+	WorkingData = ModifySubRecordsWithFilter(
+		WorkingData.data(),
+		WorkingData.size(),
+		ParentSig,
+		HDR.FormID);
+
+	std::vector<uint8_t> FinalData;
+	if (WasCompressed)
+	{
+		std::vector<uint8_t> Compressed;
+		if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed))
+		{
+			std::cerr << "Error: Compression failed for " << std::string(Sig, 4)
+				<< " FormID 0x" << std::hex << HDR.FormID << std::dec << "\n";
+			return false;
+		}
+
+		FinalData.resize(4 + Compressed.size());
+		uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
+		std::memcpy(FinalData.data(), &UncompSize, 4);
+		std::memcpy(FinalData.data() + 4, Compressed.data(), Compressed.size());
+	}
+	else
+	{
+		FinalData = WorkingData;
+	}
+
+	HDR.DataSize = static_cast<uint32_t>(FinalData.size());
+
+	Fout.write(Sig, 4);
+	Fout.write(reinterpret_cast<char*>(&HDR.DataSize), sizeof(HDR.DataSize));
+	Fout.write(reinterpret_cast<char*>(&HDR.Flags), sizeof(HDR.Flags));
+	Fout.write(reinterpret_cast<char*>(&HDR.FormID), sizeof(HDR.FormID));
+	Fout.write(reinterpret_cast<char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
+	Fout.write(reinterpret_cast<char*>(&HDR.Version), sizeof(HDR.Version));
+	Fout.write(reinterpret_cast<char*>(&HDR.Unknown), sizeof(HDR.Unknown));
+	Fout.write(reinterpret_cast<char*>(FinalData.data()), FinalData.size());
+
+	return true;
+}
 
 bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t RemainingSize)
 {
@@ -1306,140 +1436,16 @@ bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Content
 	return true;
 }
 
-
-bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
-{
-	RecordHeader HDR{};
-	std::memcpy(HDR.Sig, Sig, 4);
-
-	Read(Fin, HDR.DataSize);
-	Read(Fin, HDR.Flags);
-	Read(Fin, HDR.FormID);
-	Read(Fin, HDR.VersionCtrl);
-	Read(Fin, HDR.Version);
-	Read(Fin, HDR.Unknown);
-
-	EspRecord* Rec = NULL;
-
-	for (auto& record : Data->Records)
-	{
-		if (record.FormID == HDR.FormID &&
-			record.Sig == std::string(Sig, 4))
-		{
-			Rec = &record;
-			break;
-		}
-	}
-
-	if (!Rec)
-	{
-		for (auto& record : Data->CellRecords)
-		{
-			if (record.FormID == HDR.FormID &&
-				record.Sig == std::string(Sig, 4))
-			{
-				Rec = &record;
-				break;
-			}
-		}
-	}
-
-	if (Rec != NULL)
-	{
-		std::vector<uint8_t> OriginalData(HDR.DataSize);
-		Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
-
-		std::vector<uint8_t> WorkingData;
-		bool WasCompressed = IsCompressed(HDR);
-
-		if (WasCompressed)
-		{
-			uint32_t UncompressedSize;
-			std::memcpy(&UncompressedSize, OriginalData.data(), 4);
-
-			if (!ZlibDecompress(OriginalData.data() + 4,
-				OriginalData.size() - 4,
-				WorkingData,
-				UncompressedSize))
-			{
-				std::cerr << "Error: Decompression failed for " << std::string(Sig, 4)
-					<< " FormID 0x" << std::hex << HDR.FormID << std::dec << "\n";
-				return false;
-			}
-		}
-		else
-		{
-			WorkingData = OriginalData;
-		}
-
-		WorkingData = ModifySubRecords(WorkingData, Rec);
-
-		std::vector<uint8_t> FinalData;
-		if (WasCompressed)
-		{
-			std::vector<uint8_t> Compressed;
-			if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed))
-			{
-				std::cerr << "Error: Compression failed for " << std::string(Sig, 4)
-					<< " FormID 0x" << std::hex << HDR.FormID << std::dec << "\n";
-				return false;
-			}
-
-			FinalData.resize(4 + Compressed.size());
-			uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
-			std::memcpy(FinalData.data(), &UncompSize, 4);
-			std::memcpy(FinalData.data() + 4, Compressed.data(), Compressed.size());
-		}
-		else
-		{
-			FinalData = WorkingData;
-		}
-
-		HDR.DataSize = static_cast<uint32_t>(FinalData.size());
-
-		Fout.write(Sig, 4);
-		Fout.write(reinterpret_cast<char*>(&HDR.DataSize), sizeof(HDR.DataSize));
-		Fout.write(reinterpret_cast<char*>(&HDR.Flags), sizeof(HDR.Flags));
-		Fout.write(reinterpret_cast<char*>(&HDR.FormID), sizeof(HDR.FormID));
-		Fout.write(reinterpret_cast<char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
-		Fout.write(reinterpret_cast<char*>(&HDR.Version), sizeof(HDR.Version));
-		Fout.write(reinterpret_cast<char*>(&HDR.Unknown), sizeof(HDR.Unknown));
-		Fout.write(reinterpret_cast<char*>(FinalData.data()), FinalData.size());
-	}
-	else
-	{
-		uint32_t TotalSize = 24 + HDR.DataSize;
-		std::vector<uint8_t> CompleteRecord(TotalSize);
-
-		std::memcpy(CompleteRecord.data(), Sig, 4);
-		std::memcpy(CompleteRecord.data() + 4, &HDR.DataSize, sizeof(HDR.DataSize));
-		std::memcpy(CompleteRecord.data() + 8, &HDR.Flags, sizeof(HDR.Flags));
-		std::memcpy(CompleteRecord.data() + 12, &HDR.FormID, sizeof(HDR.FormID));
-		std::memcpy(CompleteRecord.data() + 16, &HDR.VersionCtrl, sizeof(HDR.VersionCtrl));
-		std::memcpy(CompleteRecord.data() + 20, &HDR.Version, sizeof(HDR.Version));
-		std::memcpy(CompleteRecord.data() + 22, &HDR.Unknown, sizeof(HDR.Unknown));
-
-		Fin.read(reinterpret_cast<char*>(CompleteRecord.data() + 24), HDR.DataSize);
-
-		Fout.write(reinterpret_cast<char*>(CompleteRecord.data()), TotalSize);
-	}
-
-	return true;
-}
-
-
 bool SaveEsp(const char* SavePath)
 {
 	if (LastSetPath.empty())
 	{
-		//std::cerr << "Error: No source ESP file path set\n";
 		return false;
 	}
 
 	std::ifstream Fin(LastSetPath, std::ios::binary);
 	if (!Fin.is_open())
 	{
-		//std::cerr << "Error: Cannot open source ESP file: " << LastSetPath << "\n";
 		return false;
 	}
 
@@ -1450,19 +1456,15 @@ bool SaveEsp(const char* SavePath)
 		return false;
 	}
 
-	//I forgot that string is ANSI... Sorry.
 	std::wstring WSavePath(Wlen - 1, 0);
 	MultiByteToWideChar(CP_UTF8, 0, SavePath, -1, &WSavePath[0], Wlen);
 
 	std::ofstream Fout(WSavePath, std::ios::binary);
 	if (!Fout.is_open())
 	{
-		//std::cerr << "Error: Cannot create output ESP file: " << SavePath << "\n";
 		Fin.close();
 		return false;
 	}
-
-	//std::cout << "Processing: " << LastSetPath << " -> " << SavePath << "\n";
 
 	bool Success = ProcessFileContent(Fin, Fout, -1);
 
