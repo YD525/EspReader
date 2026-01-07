@@ -64,7 +64,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.1.3";
+static const std::string Version = "1.1.5";
 
 const char* C_GetVersion()
 {
@@ -955,9 +955,13 @@ bool ModifySubRecordByOffset(int IsCell,int RecordOffset,int SubOffset,const cha
 
 	if (NewUtf8Data)
 	{
-		Sub.Data.assign(
-			NewUtf8Data,
-			NewUtf8Data + std::strlen(NewUtf8Data));
+		int len = std::strlen(NewUtf8Data);
+
+		Sub.Data.resize(len + 1);
+
+		std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+
+		Sub.Data[len] = '\0';
 
 		Sub.IsModify = true;
 	}
@@ -978,7 +982,6 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 {
 	std::string StrRecordSig = RecordSig ? RecordSig : "";
 	std::string StrSubSig = SubSig ? SubSig : "";
-	std::string StrNewData = NewUtf8Data ? NewUtf8Data : "";
 
 	for (auto& Rec : Data->Records)
 	{
@@ -990,7 +993,14 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 				{
 					if (NewUtf8Data)
 					{
-						Sub.Data.assign(StrNewData.begin(), StrNewData.end());
+						int len = std::strlen(NewUtf8Data);
+
+						Sub.Data.resize(len + 1);
+
+						std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+
+						Sub.Data[len] = '\0';
+
 						Sub.IsModify = true;
 					}
 
@@ -1011,7 +1021,19 @@ bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSi
 			{
 				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
 				{
-					Sub.Data.assign(StrNewData.begin(), StrNewData.end());
+					if (NewUtf8Data)
+					{
+						int len = std::strlen(NewUtf8Data);
+
+						Sub.Data.resize(len + 1);
+
+						std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+
+						Sub.Data[len] = '\0';
+
+						Sub.IsModify = true;
+					}
+
 					Sub.StringID = 0;
 					Sub.IsLocalized = false;
 					return true;

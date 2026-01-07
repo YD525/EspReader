@@ -115,19 +115,22 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(877,6): warning C4
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(37,18):
       see previous definition of 'FreeSearchResults'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(972,6): warning C4273: 'C_ModifySubRecordByOffset': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(958,11): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(976,6): warning C4273: 'C_ModifySubRecordByOffset': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(59,18):
       see previous definition of 'C_ModifySubRecordByOffset'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(977,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(981,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(60,18):
       see previous definition of 'C_ModifySubRecord'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1028,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(996,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1026,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1050,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(61,18):
       see previous definition of 'C_SaveEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1055,6): warning C4273: 'C_Clear': inconsistent dll linkage
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1077,6): warning C4273: 'C_Clear': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(63,18):
       see previous definition of 'C_Clear'
   
@@ -136,6 +139,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1055,6): warning C
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 1942 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 1919 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll
