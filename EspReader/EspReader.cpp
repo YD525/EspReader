@@ -1109,11 +1109,6 @@ const SubRecordData* FindModifiedSubRecord(
 	const std::string& ChildSig,
 	int OccurrenceIndex)
 {
-	if (!TranslateFilter->ShouldParseRecordWithSub(ParentSig, ChildSig))
-	{
-		return nullptr;  
-	}
-
 	for (auto& rec : Data->Records)
 	{
 		if (rec.FormID == FormID && rec.Sig == ParentSig)
@@ -1175,6 +1170,21 @@ std::vector<uint8_t> ModifySubRecordsWithFilter(
 
 		if (modified)
 		{
+			if (modified->Data.size() > 0xFFFF)
+			{
+				std::cerr
+					<< "Error: SubRecord " << osr.Sig
+					<< " in " << parentSig
+					<< " FormID 0x" << std::hex << formID << std::dec
+					<< " exceeds 65535 bytes, keeping original data\n";
+
+				result.insert(result.end(),
+					originalData + osr.OffsetInData,
+					originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
+
+				continue;
+			}
+
 			SubRecordHeader newHeader;
 			std::memcpy(newHeader.Sig, osr.Sig.c_str(), 4);
 			newHeader.Size = static_cast<uint16_t>(modified->Data.size());
