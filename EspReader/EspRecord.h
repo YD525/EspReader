@@ -367,7 +367,7 @@ class EspRecord
 		return *this;
 	}
 
-	bool CanTranslate() const
+	bool CheckSub() const
 	{
 		for (size_t i = 0; i < SubRecords.size(); ++i)
 		{
@@ -375,8 +375,6 @@ class EspRecord
 			if (!Sub.Data.empty())
 			{
 				std::string Text = Sub.GetString();
-
-				Text.erase(std::remove(Text.begin(), Text.end(), '\0'), Text.end());
 
 				if (!Text.empty())
 				{
@@ -406,6 +404,10 @@ class EspRecord
 			);
 
 			return IsValid;
+		}
+		else
+		{
+			return false;
 		}
 	}
 
@@ -552,16 +554,6 @@ class EspRecord
 
 		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
 		{
-			if (Sig == "PERK" && Sub.Sig == "EPFD")
-			{
-				// EPFD is a string only when EPFT = 6 or 7.
-				if (!HasEPFT || (LastEPFT != 6 && LastEPFT != 7))
-				{
-					//Not a string type, skipping.
-					return;
-				}
-			}
-
 			if (Sub.IsLocalized == true)
 			{
 				SubRecords.push_back(Sub);

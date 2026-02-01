@@ -517,7 +517,7 @@ void ParseCellGroup(std::ifstream& f, EspData& doc, const RecordFilter& filter, 
 				ParseSubRecordsStream(f, hdr.DataSize, Record, filter, hdr.Sig);
 			}
 
-			if (Record.CanTranslate())
+			if (Record.CheckSub())
 			{
 				doc.AddRecord(Record,*TranslateFilter);
 			}
@@ -687,7 +687,7 @@ void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& fil
 				ParseSubRecordsStream(f, hdr.DataSize, Record, filter, hdr.Sig);
 			}
 
-			if (Record.CanTranslate())
+			if (Record.CheckSub())
 			{
 				doc.AddRecord(Record,*TranslateFilter);
 			}
