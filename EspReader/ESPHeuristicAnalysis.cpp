@@ -424,7 +424,7 @@ public:
             ss << "Total Fields Processed: " << GlobalStats_.TotalCount << "\n";
             ss << "Passed: " << GlobalStats_.PassCount 
                << " (" << (100.0 * GlobalStats_.PassCount / GlobalStats_.TotalCount) << "%)\n";
-            ss << "Failed: " << GlobalStats_.FailCount 
+            ss << "Rejection: " << GlobalStats_.FailCount 
                << " (" << (100.0 * GlobalStats_.FailCount / GlobalStats_.TotalCount) << "%)\n";
             ss << "Average Quality Score: " << GlobalStats_.AvgQuality << "/100\n";
             ss << "Quality Range: " << GlobalStats_.MinQuality 
