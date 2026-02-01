@@ -66,7 +66,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.1.6";
+static const std::string Version = "1.2.6";
 
 const char* C_GetVersion()
 {

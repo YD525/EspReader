@@ -334,7 +334,8 @@ public:
             {
                 Passed = false;
             }
-            else if (Info->Type == MIXED_DATA)
+            else 
+            if (Info->Type == MIXED_DATA)
             {
                 if (RecordSig == "PERK" && SubSig == "EPFD")
                 {
@@ -366,6 +367,14 @@ public:
 
         std::string Text(reinterpret_cast<const char*>(Data), Size);
         Text.erase(std::remove(Text.begin(), Text.end(), '\0'), Text.end());
+
+        if (RecordSig == "INFO" && SubSig == "NAM1")
+        {
+            if (!Text.empty() && Text.front() == '{' && Text.back() == '}')
+            {
+                Passed = false;
+            }
+        }
 
         if (Text.empty())
         {
