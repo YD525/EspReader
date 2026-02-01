@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "TextHelper.h"
+#include <iomanip>
+#include <sstream>
 
 class ESP_HeuristicAnalysis
 {
@@ -32,8 +34,51 @@ public:
         bool IsNullTerminated;
     };
 
+    struct FieldStats
+    {
+        int TotalCount = 0;           
+        int PassCount = 0;            
+        int FailCount = 0;            
+        double TotalQuality = 0.0;    
+        double AvgQuality = 0.0;      
+        int MinQuality = 100;         
+        int MaxQuality = 0;           
+        
+        void AddScore(int quality, bool passed)
+        {
+            TotalCount++;
+            if (passed)
+                PassCount++;
+            else
+                FailCount++;
+                
+            TotalQuality += quality;
+            AvgQuality = TotalQuality / TotalCount;
+            
+            if (quality < MinQuality)
+                MinQuality = quality;
+            if (quality > MaxQuality)
+                MaxQuality = quality;
+        }
+        
+        void Reset()
+        {
+            TotalCount = 0;
+            PassCount = 0;
+            FailCount = 0;
+            TotalQuality = 0.0;
+            AvgQuality = 0.0;
+            MinQuality = 100;
+            MaxQuality = 0;
+        }
+    };
+
 private:
     std::unordered_map<std::string, FieldInfo> KnownFields_;
+    
+    std::unordered_map<std::string, FieldStats> FieldStatistics_;
+    
+    FieldStats GlobalStats_;
 
     std::string MakeKey(const std::string& RecordSig, const std::string& SubSig) const
     {
@@ -49,25 +94,19 @@ public:
     void InitializeKnownFields()
     {
         AddField("PERK", "EPF2", PURE_STRING, 0, 512, false, 0, 0, true);
-
         AddField("PERK", "EPFD", MIXED_DATA, 0, 512, false, 0, 0, true);
 
         AddField("MESG", "ITXT", MIXED_DATA, 0, 256, false, 0, 0, true);
-
         AddField("MESG", "DESC", PURE_STRING, 0, 4096, false, 0, 0, true);
-
         AddField("MESG", "FULL", PURE_STRING, 0, 256, false, 0, 0, true);
 
         AddField("INFO", "NAM1", PURE_STRING, 0, 4096, false, 0, 0, true);
-
         AddField("INFO", "RNAM", PURE_STRING, 0, 4096, false, 0, 0, true);
 
         AddField("QUST", "CNAM", PURE_STRING, 0, 4096, false, 0, 0, true);
-
         AddField("QUST", "NNAM", PURE_STRING, 0, 512, false, 0, 0, true);
 
         AddField("BOOK", "CNAM", PURE_STRING, 0, 65535, false, 0, 0, true);
-
         AddField("BOOK", "DESC", PURE_STRING, 0, 4096, false, 0, 0, true);
 
         AddField("REGN", "RDMP", MIXED_DATA, 0, 512, false, 0, 0, true);
@@ -128,7 +167,7 @@ public:
 
     bool LooksLikeHexID(const uint8_t* Data, size_t Size) const
     {
-        if (Size < 11) return false; 
+        if (Size < 11) return false;
 
         size_t HexCount = 0;
         size_t DashCount = 0;
@@ -192,14 +231,14 @@ public:
     {
         if (Size == 0) return 0;
 
-        int Score = 50; 
+        int Score = 50;
 
         size_t PrintableCount = 0;
         size_t LetterCount = 0;
         size_t SpaceCount = 0;
         size_t PunctuationCount = 0;
         size_t ControlCount = 0;
-        size_t ExtendedCount = 0; 
+        size_t ExtendedCount = 0;
 
         for (size_t i = 0; i < Size && Data[i] != 0; ++i)
         {
@@ -226,7 +265,7 @@ public:
             {
                 if (C == '\n' || C == '\r' || C == '\t')
                 {
-                    
+
                 }
                 else
                 {
@@ -254,7 +293,7 @@ public:
         if (LetterRatio > 0.3f) Score += 20;
         else if (LetterRatio > 0.1f) Score += 10;
 
-        if (SpaceCount > 0 && TotalChars > 10) Score += 10; 
+        if (SpaceCount > 0 && TotalChars > 10) Score += 10;
 
         if (ControlRatio > 0.1f) Score -= 30;
         if (PrintableRatio < 0.5f) Score -= 20;
@@ -265,7 +304,6 @@ public:
         return std::max(0, std::min(100, Score));
     }
 
-
     bool IsValidTranslatableText(const std::string& RecordSig,
         const std::string& SubSig,
         const uint8_t* Data,
@@ -274,23 +312,27 @@ public:
     {
         if (!Data || Size == 0) return false;
 
+        int Quality = CalculateTextQuality(Data, Size);
+
         const FieldInfo* Info = GetFieldInfo(RecordSig, SubSig);
+
+        bool Passed = true;
 
         if (Info)
         {
             if (Info->HasFixedSize && Size != Info->FixedSize)
             {
-                return false;
+                Passed = false;
             }
 
             if (Size < Info->MinSize || (Info->MaxSize > 0 && Size > Info->MaxSize))
             {
-                return false;
+                Passed = false;
             }
 
             if (Info->Type == BINARY_DATA)
             {
-                return false;
+                Passed = false;
             }
             else if (Info->Type == MIXED_DATA)
             {
@@ -298,7 +340,7 @@ public:
                 {
                     if (LastEPFT != 6 && LastEPFT != 7)
                     {
-                        return false;
+                        Passed = false;
                     }
                 }
 
@@ -306,22 +348,20 @@ public:
                 {
                     if (IsNumericOnly(Data, Size) || LooksLikeHexID(Data, Size))
                     {
-                        return false;
+                        Passed = false;
                     }
                 }
             }
         }
 
-        int Quality = CalculateTextQuality(Data, Size);
-
         if (Quality < 40)
         {
-            return false;
+            Passed = false;
         }
 
         if (LooksLikeHexID(Data, Size))
         {
-            return false;
+            Passed = false;
         }
 
         std::string Text(reinterpret_cast<const char*>(Data), Size);
@@ -329,15 +369,67 @@ public:
 
         if (Text.empty())
         {
-            return false;
+            Passed = false;
         }
 
-        return HasVisibleText(Text);
+        if (Passed && !HasVisibleText(Text))
+        {
+            Passed = false;
+        }
+
+        const_cast<ESP_HeuristicAnalysis*>(this)->RecordStatistics(RecordSig, SubSig, Quality, Passed);
+
+        return Passed;
+    }
+
+    void RecordStatistics(const std::string& RecordSig, const std::string& SubSig, int Quality, bool Passed)
+    {
+        std::string Key = MakeKey(RecordSig, SubSig);
+        FieldStatistics_[Key].AddScore(Quality, Passed);
+        GlobalStats_.AddScore(Quality, Passed);
+    }
+
+    void ResetStatistics()
+    {
+        FieldStatistics_.clear();
+        GlobalStats_.Reset();
+    }
+
+    const FieldStats* GetFieldStatistics(const std::string& RecordSig, const std::string& SubSig) const
+    {
+        std::string Key = MakeKey(RecordSig, SubSig);
+        auto It = FieldStatistics_.find(Key);
+        if (It != FieldStatistics_.end())
+        {
+            return &It->second;
+        }
+        return nullptr;
+    }
+
+    const FieldStats& GetGlobalStatistics() const
+    {
+        return GlobalStats_;
     }
 
     std::string ExportFieldReport() const
     {
-        std::string Report = "=== Known Field Configuration ===\n\n";
+        std::stringstream ss;
+        ss << std::fixed << std::setprecision(2);
+
+        ss << "=== Scoring based on known configuration ===\n\n";
+
+        if (GlobalStats_.TotalCount > 0)
+        {
+            ss << "=== Global Statistics ===\n";
+            ss << "Total Fields Processed: " << GlobalStats_.TotalCount << "\n";
+            ss << "Passed: " << GlobalStats_.PassCount 
+               << " (" << (100.0 * GlobalStats_.PassCount / GlobalStats_.TotalCount) << "%)\n";
+            ss << "Failed: " << GlobalStats_.FailCount 
+               << " (" << (100.0 * GlobalStats_.FailCount / GlobalStats_.TotalCount) << "%)\n";
+            ss << "Average Quality Score: " << GlobalStats_.AvgQuality << "/100\n";
+            ss << "Quality Range: " << GlobalStats_.MinQuality 
+               << " - " << GlobalStats_.MaxQuality << "\n\n";
+        }
 
         std::unordered_map<std::string, std::vector<std::string>> ByRecord;
 
@@ -349,27 +441,38 @@ public:
 
         for (const auto& Pair : ByRecord)
         {
-            Report += Pair.first + ":\n";
+            ss << Pair.first << ":\n";
+            
             for (const auto& Sub : Pair.second)
             {
                 const FieldInfo* Info = GetFieldInfo(Pair.first, Sub);
-                Report += "  " + Sub + " - ";
+                ss << "  " << Sub << " - ";
 
                 switch (Info->Type)
                 {
-                case PURE_STRING: Report += "PURE_STRING"; break;
-                case STRUCT_WITH_STRING: Report += "STRUCT_WITH_STRING"; break;
-                case BINARY_DATA: Report += "BINARY_DATA"; break;
-                case MIXED_DATA: Report += "MIXED_DATA"; break;
-                default: Report += "UNKNOWN"; break;
+                case PURE_STRING: ss << "PURE_STRING"; break;
+                case STRUCT_WITH_STRING: ss << "STRUCT_WITH_STRING"; break;
+                case BINARY_DATA: ss << "BINARY_DATA"; break;
+                case MIXED_DATA: ss << "MIXED_DATA"; break;
+                default: ss << "UNKNOWN"; break;
                 }
 
-                Report += "\n";
+                const FieldStats* Stats = GetFieldStatistics(Pair.first, Sub);
+                if (Stats && Stats->TotalCount > 0)
+                {
+                    ss << " | Samples: " << Stats->TotalCount;
+                    ss << " | Pass: " << Stats->PassCount << "/" << Stats->TotalCount;
+                    ss << " (" << (100.0 * Stats->PassCount / Stats->TotalCount) << "%)";
+                    ss << " | Avg Score: " << Stats->AvgQuality << "/100";
+                    ss << " | Range: [" << Stats->MinQuality << "-" << Stats->MaxQuality << "]";
+                }
+
+                ss << "\n";
             }
-            Report += "\n";
+            ss << "\n";
         }
 
-        return Report;
+        return ss.str();
     }
 };
 
