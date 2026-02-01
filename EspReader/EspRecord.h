@@ -479,6 +479,10 @@ class EspRecord
 
 		if (id > 0x000FFFFF) return false;
 
+		if (id == 0) return false;
+
+		if (id < 0x3E8) return false;
+
 		bool AllPrintable = true;
 		for (int i = 0; i < 4; ++i)
 		{
