@@ -127,6 +127,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ESPHeuristicAnalysis.cpp" />
     <ClCompile Include="EspReader.cpp" />
     <ClCompile Include="miniz.c" />
     <ClCompile Include="TextHelper.cpp" />

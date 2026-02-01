@@ -33,6 +33,8 @@ extern "C"
 	SSELex_API int C_SetFilter(const char* parentSig, const char** childSigs, int childCount);
 	SSELex_API void C_ClearFilter();
 	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
+    SSELex_API const char* C_GetFieldReport();
+    SSELex_API int C_GetFieldReportLength();
 	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);
 	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
 
@@ -64,7 +66,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.1.5";
+static const std::string Version = "1.1.6";
 
 const char* C_GetVersion()
 {
@@ -76,6 +78,30 @@ int C_GetVersionLength()
 	return static_cast<int>(Version.length());
 }
 
+const char* C_GetFieldReport()
+{
+	if (!GlobalTextValidator)
+	{
+		static const char* errorMsg = "Validator not initialized";
+		return errorMsg;
+	}
+
+	static std::string reportBuffer;
+	reportBuffer = GlobalTextValidator->ExportFieldReport();
+	return reportBuffer.c_str();
+}
+
+int C_GetFieldReportLength()
+{
+	if (!GlobalTextValidator)
+	{
+		return 0;
+	}
+
+	static std::string reportBuffer;
+	reportBuffer = GlobalTextValidator->ExportFieldReport();
+	return static_cast<int>(reportBuffer.length());
+}
 
 const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index)
 {
@@ -677,6 +703,14 @@ void Clear();
 
 int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 {
+	if (GlobalTextValidator)
+	{
+		delete GlobalTextValidator;
+		GlobalTextValidator = nullptr;
+	}
+
+	GlobalTextValidator = new ESP_HeuristicAnalysis();
+
 	Clear();
 	LastSetPath = EspPath;
 	Data = new EspData();
@@ -813,7 +847,10 @@ int C_SetDefaultFilter()
 
 void Init()
 {
-	
+	if (!GlobalTextValidator)
+	{
+		GlobalTextValidator = new ESP_HeuristicAnalysis();
+	}
 }
 
 void WaitForExit()
@@ -854,6 +891,12 @@ void C_Init()
 
 void C_Close()
 {
+	if (GlobalTextValidator)
+	{
+		delete GlobalTextValidator;
+		GlobalTextValidator = nullptr;
+	}
+
 	Close();
 }
 

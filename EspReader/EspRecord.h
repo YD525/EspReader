@@ -10,6 +10,7 @@
 #include "TextHelper.h"
 #include <algorithm>
 #include <cctype>
+#include "ESPHeuristicAnalysis.cpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -17,6 +18,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #endif
+
+ESP_HeuristicAnalysis* GlobalTextValidator = nullptr;
 
 // ===== Record Filter Configuration =====
 class RecordFilter
@@ -392,82 +395,18 @@ class EspRecord
 		if (Item.Data.empty())
 			return false;
 
-		//Add an extra layer of security.
-		if (!IsProbablyString(Item.Data.data(), Item.Data.size()))
-	    return false;
-
-		std::string Text(Item.Data.begin(), Item.Data.end());
-		Text.erase(std::remove(Text.begin(), Text.end(), '\0'), Text.end());
-
-		if (Text.empty())
-			return false;
-
-		bool IsMESG_ITXT = (Parent.Sig == "MESG" && Item.Sig == "ITXT");
-
-		if (!HasVisibleText(Text))
-			return false;
-
-		if (IsMESG_ITXT)
+		if (GlobalTextValidator)
 		{
-			bool AllDigits = true;
-			for (char Char : Text)
-			{
-				if (!std::isdigit(Char))
-				{
-					if (Char != '.' && Char != ',')
-					{
-						AllDigits = false;
-						break;
-					}
-				}
-			}
-			if (AllDigits)
-				return false;
+			bool IsValid = GlobalTextValidator->IsValidTranslatableText(
+				Parent.Sig,
+				Item.Sig,
+				Item.Data.data(),
+				Item.Data.size(),
+				Parent.LastEPFT
+			);
 
-			size_t Len = Text.length();
-			if (Len >= 11)
-			{
-				bool IsHexPattern = true;
-				size_t i = 0;
-				int GroupCount = 0;
-				auto IsHexChar = [](char c) {
-					return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-					};
-
-				while (i < Len)
-				{
-					if (i + 1 >= Len)
-					{
-						IsHexPattern = false;
-						break;
-					}
-
-					if (!IsHexChar(Text[i]) || !IsHexChar(Text[i + 1]))
-					{
-						IsHexPattern = false;
-						break;
-					}
-					i += 2;
-
-					if (i < Len)
-					{
-						if (Text[i] != '-')
-						{
-							IsHexPattern = false;
-							break;
-						}
-						i++;
-					}
-
-					GroupCount++;
-				}
-
-				if (IsHexPattern && GroupCount >= 4)
-					return false;
-			}
+			return IsValid;
 		}
-
-		return true;
 	}
 
 	bool IsProbablyStringID(const uint8_t* data, size_t size)
