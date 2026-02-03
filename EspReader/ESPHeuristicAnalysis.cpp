@@ -230,7 +230,6 @@ public:
     int CalculateTextQuality(const uint8_t* Data, size_t Size) const
     {
         if (Size == 0) return 0;
-
         int Score = 50;
 
         size_t PrintableCount = 0;
@@ -238,8 +237,8 @@ public:
         size_t SpaceCount = 0;
         size_t PunctuationCount = 0;
         size_t ControlCount = 0;
-        size_t UTF8Count = 0;  
-        size_t ValidUTF8Sequences = 0;  
+        size_t ValidUTF8Sequences = 0;
+        size_t TotalChars = 0;  
 
         size_t i = 0;
         while (i < Size && Data[i] != 0)
@@ -248,7 +247,8 @@ public:
 
             if (C <= 0x7F)
             {
-                if (C >= 0x20)  
+                TotalChars++;  
+                if (C >= 0x20)
                 {
                     PrintableCount++;
                     if ((C >= 'A' && C <= 'Z') || (C >= 'a' && C <= 'z'))
@@ -265,7 +265,7 @@ public:
                         PunctuationCount++;
                     }
                 }
-                else if (C < 0x20)  
+                else if (C < 0x20)
                 {
                     if (C != '\n' && C != '\r' && C != '\t')
                     {
@@ -274,20 +274,19 @@ public:
                 }
                 i++;
             }
-       
-            else if ((C & 0xE0) == 0xC0) 
+            else if ((C & 0xE0) == 0xC0)  
             {
                 if (i + 1 < Size && (Data[i + 1] & 0xC0) == 0x80)
                 {
-                    UTF8Count++;
+                    TotalChars++;  
                     ValidUTF8Sequences++;
-                    PrintableCount += 2; 
-                    LetterCount++;  
+                    PrintableCount++;
+                    LetterCount++;
                     i += 2;
                 }
                 else
                 {
-                    ControlCount++;  
+                    ControlCount++;
                     i++;
                 }
             }
@@ -297,10 +296,10 @@ public:
                     (Data[i + 1] & 0xC0) == 0x80 &&
                     (Data[i + 2] & 0xC0) == 0x80)
                 {
-                    UTF8Count++;
+                    TotalChars++;  
                     ValidUTF8Sequences++;
-                    PrintableCount += 3;  
-                    LetterCount++;  
+                    PrintableCount++;
+                    LetterCount++;
                     i += 3;
                 }
                 else
@@ -316,9 +315,9 @@ public:
                     (Data[i + 2] & 0xC0) == 0x80 &&
                     (Data[i + 3] & 0xC0) == 0x80)
                 {
-                    UTF8Count++;
+                    TotalChars++;  
                     ValidUTF8Sequences++;
-                    PrintableCount += 4;
+                    PrintableCount++;
                     LetterCount++;
                     i += 4;
                 }
@@ -328,20 +327,17 @@ public:
                     i++;
                 }
             }
-            else  
+            else
             {
                 ControlCount++;
                 i++;
             }
         }
 
-        size_t TotalBytes = i;  
-        if (TotalBytes == 0) return 0;
+        size_t TotalBytes = i;
+        if (TotalChars == 0) return 0;
 
-        size_t TotalChars = TotalBytes - (UTF8Count * 2);  
-        if (TotalChars == 0) TotalChars = 1;
-
-        float PrintableRatio = static_cast<float>(PrintableCount) / TotalBytes;
+        float PrintableRatio = static_cast<float>(PrintableCount) / TotalChars;  
         float LetterRatio = static_cast<float>(LetterCount) / TotalChars;
         float ControlRatio = static_cast<float>(ControlCount) / TotalBytes;
 
@@ -352,13 +348,11 @@ public:
         else if (LetterRatio > 0.1f) Score += 10;
 
         if (SpaceCount > 0 && TotalBytes > 10) Score += 10;
-
         if (ValidUTF8Sequences > 0) Score += 15;
 
         if (ControlRatio > 0.1f) Score -= 30;
         if (PrintableRatio < 0.5f) Score -= 20;
-        if (LetterRatio < 0.05f && ValidUTF8Sequences == 0) Score -= 20;  
-
+        if (LetterRatio < 0.05f && ValidUTF8Sequences == 0) Score -= 20;
         if (TotalBytes < 3) Score -= 20;
 
         return std::max(0, std::min(100, Score));
