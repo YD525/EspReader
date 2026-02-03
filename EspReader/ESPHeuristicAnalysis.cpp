@@ -238,54 +238,112 @@ public:
         size_t SpaceCount = 0;
         size_t PunctuationCount = 0;
         size_t ControlCount = 0;
-        size_t ExtendedCount = 0;
+        size_t UTF8Count = 0;  
+        size_t ValidUTF8Sequences = 0;  
 
-        for (size_t i = 0; i < Size && Data[i] != 0; ++i)
+        size_t i = 0;
+        while (i < Size && Data[i] != 0)
         {
             uint8_t C = Data[i];
 
-            if (C >= 0x20 && C <= 0x7E)
+            if (C <= 0x7F)
             {
-                PrintableCount++;
-                if ((C >= 'A' && C <= 'Z') || (C >= 'a' && C <= 'z'))
+                if (C >= 0x20)  
                 {
-                    LetterCount++;
+                    PrintableCount++;
+                    if ((C >= 'A' && C <= 'Z') || (C >= 'a' && C <= 'z'))
+                    {
+                        LetterCount++;
+                    }
+                    else if (C == ' ' || C == '\t')
+                    {
+                        SpaceCount++;
+                    }
+                    else if ((C >= 0x21 && C <= 0x2F) || (C >= 0x3A && C <= 0x40) ||
+                        (C >= 0x5B && C <= 0x60) || (C >= 0x7B && C <= 0x7E))
+                    {
+                        PunctuationCount++;
+                    }
                 }
-                else if (C == ' ' || C == '\t')
+                else if (C < 0x20)  
                 {
-                    SpaceCount++;
+                    if (C != '\n' && C != '\r' && C != '\t')
+                    {
+                        ControlCount++;
+                    }
                 }
-                else if ((C >= 0x21 && C <= 0x2F) || (C >= 0x3A && C <= 0x40) ||
-                    (C >= 0x5B && C <= 0x60) || (C >= 0x7B && C <= 0x7E))
+                i++;
+            }
+       
+            else if ((C & 0xE0) == 0xC0) 
+            {
+                if (i + 1 < Size && (Data[i + 1] & 0xC0) == 0x80)
                 {
-                    PunctuationCount++;
+                    UTF8Count++;
+                    ValidUTF8Sequences++;
+                    PrintableCount += 2; 
+                    LetterCount++;  
+                    i += 2;
+                }
+                else
+                {
+                    ControlCount++;  
+                    i++;
                 }
             }
-            else if (C < 0x20)
+            else if ((C & 0xF0) == 0xE0)  
             {
-                if (C == '\n' || C == '\r' || C == '\t')
+                if (i + 2 < Size &&
+                    (Data[i + 1] & 0xC0) == 0x80 &&
+                    (Data[i + 2] & 0xC0) == 0x80)
                 {
-
+                    UTF8Count++;
+                    ValidUTF8Sequences++;
+                    PrintableCount += 3;  
+                    LetterCount++;  
+                    i += 3;
                 }
                 else
                 {
                     ControlCount++;
+                    i++;
                 }
             }
-            else if (C >= 0x80)
+            else if ((C & 0xF8) == 0xF0)  
             {
-                ExtendedCount++;
+                if (i + 3 < Size &&
+                    (Data[i + 1] & 0xC0) == 0x80 &&
+                    (Data[i + 2] & 0xC0) == 0x80 &&
+                    (Data[i + 3] & 0xC0) == 0x80)
+                {
+                    UTF8Count++;
+                    ValidUTF8Sequences++;
+                    PrintableCount += 4;
+                    LetterCount++;
+                    i += 4;
+                }
+                else
+                {
+                    ControlCount++;
+                    i++;
+                }
+            }
+            else  
+            {
+                ControlCount++;
+                i++;
             }
         }
 
-        size_t TotalChars = Size;
-        if (Data[Size - 1] == 0) TotalChars--;
+        size_t TotalBytes = i;  
+        if (TotalBytes == 0) return 0;
 
-        if (TotalChars == 0) return 0;
+        size_t TotalChars = TotalBytes - (UTF8Count * 2);  
+        if (TotalChars == 0) TotalChars = 1;
 
-        float PrintableRatio = static_cast<float>(PrintableCount) / TotalChars;
+        float PrintableRatio = static_cast<float>(PrintableCount) / TotalBytes;
         float LetterRatio = static_cast<float>(LetterCount) / TotalChars;
-        float ControlRatio = static_cast<float>(ControlCount) / TotalChars;
+        float ControlRatio = static_cast<float>(ControlCount) / TotalBytes;
 
         if (PrintableRatio > 0.8f) Score += 20;
         else if (PrintableRatio > 0.6f) Score += 10;
@@ -293,13 +351,15 @@ public:
         if (LetterRatio > 0.3f) Score += 20;
         else if (LetterRatio > 0.1f) Score += 10;
 
-        if (SpaceCount > 0 && TotalChars > 10) Score += 10;
+        if (SpaceCount > 0 && TotalBytes > 10) Score += 10;
+
+        if (ValidUTF8Sequences > 0) Score += 15;
 
         if (ControlRatio > 0.1f) Score -= 30;
         if (PrintableRatio < 0.5f) Score -= 20;
-        if (LetterRatio < 0.05f) Score -= 20;
+        if (LetterRatio < 0.05f && ValidUTF8Sequences == 0) Score -= 20;  
 
-        if (TotalChars < 3) Score -= 20;
+        if (TotalBytes < 3) Score -= 20;
 
         return std::max(0, std::min(100, Score));
     }
