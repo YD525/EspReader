@@ -1290,6 +1290,7 @@ std::vector<uint8_t> ModifySubRecordsWithFilter(
 	return result;
 }
 
+
 bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
 	const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
 {
@@ -1308,13 +1309,7 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
 
 	if (modifiedIndex.find(MakeRecordKey(HDR.FormID, Sig)) == modifiedIndex.end())
 	{
-		Fout.write(Sig, 4);
-		Fout.write(reinterpret_cast<const char*>(&HDR.DataSize), sizeof(HDR.DataSize));
-		Fout.write(reinterpret_cast<const char*>(&HDR.Flags), sizeof(HDR.Flags));
-		Fout.write(reinterpret_cast<const char*>(&HDR.FormID), sizeof(HDR.FormID));
-		Fout.write(reinterpret_cast<const char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
-		Fout.write(reinterpret_cast<const char*>(&HDR.Version), sizeof(HDR.Version));
-		Fout.write(reinterpret_cast<const char*>(&HDR.Unknown), sizeof(HDR.Unknown));
+		Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
 		Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
 		return true;
 	}
@@ -1326,14 +1321,8 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
 	{
 		if (HDR.DataSize < 4)
 		{
-			Fout.write(Sig, 4);
-			Fout.write(reinterpret_cast<char*>(&HDR.DataSize), sizeof(HDR.DataSize));
-			Fout.write(reinterpret_cast<char*>(&HDR.Flags), sizeof(HDR.Flags));
-			Fout.write(reinterpret_cast<char*>(&HDR.FormID), sizeof(HDR.FormID));
-			Fout.write(reinterpret_cast<char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
-			Fout.write(reinterpret_cast<char*>(&HDR.Version), sizeof(HDR.Version));
-			Fout.write(reinterpret_cast<char*>(&HDR.Unknown), sizeof(HDR.Unknown));
-			Fout.write(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+			Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
+			Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
 			return true;
 		}
 
@@ -1386,16 +1375,12 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
 
 	HDR.DataSize = static_cast<uint32_t>(FinalData.size());
 
-	Fout.write(Sig, 4);
-	Fout.write(reinterpret_cast<char*>(&HDR.DataSize), sizeof(HDR.DataSize));
-	Fout.write(reinterpret_cast<char*>(&HDR.Flags), sizeof(HDR.Flags));
-	Fout.write(reinterpret_cast<char*>(&HDR.FormID), sizeof(HDR.FormID));
-	Fout.write(reinterpret_cast<char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
-	Fout.write(reinterpret_cast<char*>(&HDR.Version), sizeof(HDR.Version));
-	Fout.write(reinterpret_cast<char*>(FinalData.data()), FinalData.size());
+	Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
+	Fout.write(reinterpret_cast<const char*>(FinalData.data()), FinalData.size());
 
 	return true;
 }
+
 
 bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t RemainingSize,
 	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
