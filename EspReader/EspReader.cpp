@@ -66,7 +66,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.2.6";
+static const std::string Version = "1.2.7";
 
 const char* C_GetVersion()
 {
@@ -1130,17 +1130,53 @@ void Close()
 	Clear();
 }
 
-
 #pragma region SaveFunc
 
-bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4]);
-bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize);
+bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4], const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex);
+bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize, const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex);
+
+static inline uint64_t MakeRecordKey(uint32_t FormID, const char Sig[4])
+{
+	uint32_t SigInt = 0;
+	std::memcpy(&SigInt, Sig, 4);
+	return (static_cast<uint64_t>(FormID) << 32) | static_cast<uint64_t>(SigInt);
+}
+
+static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig)
+{
+	return MakeRecordKey(FormID, Sig.c_str());
+}
+
+std::unordered_map<uint64_t, const EspRecord*> BuildModifiedIndex()
+{
+	std::unordered_map<uint64_t, const EspRecord*> index;
+
+	auto scanRecords = [&](const std::vector<EspRecord>& records)
+		{
+			for (const auto& rec : records)
+			{
+				for (const auto& sub : rec.SubRecords)
+				{
+					if (sub.IsModify)
+					{
+						index[MakeRecordKey(rec.FormID, rec.Sig)] = &rec;
+						break;
+					}
+				}
+			}
+		};
+
+	scanRecords(Data->Records);
+	scanRecords(Data->CellRecords);
+
+	return index;
+}
 
 struct OriginalSubRecord
 {
 	std::string Sig;
 	int OccurrenceIndex;
-	size_t OffsetInData; 
+	size_t OffsetInData;
 	uint16_t Size;
 };
 
@@ -1169,65 +1205,46 @@ std::vector<OriginalSubRecord> ParseOriginalSubRecords(const uint8_t* data, size
 }
 
 const SubRecordData* FindModifiedSubRecord(
+	const std::unordered_map<uint64_t, const EspRecord*>& index,
 	const std::string& ParentSig,
 	uint32_t FormID,
 	const std::string& ChildSig,
 	int OccurrenceIndex)
 {
-	for (auto& rec : Data->Records)
+	auto it = index.find(MakeRecordKey(FormID, ParentSig));
+	if (it == index.end())
+		return nullptr;
+
+	const EspRecord* rec = it->second;
+
+	for (const auto& sub : rec->SubRecords)
 	{
-		if (rec.FormID == FormID && rec.Sig == ParentSig)
+		if (sub.Sig == ChildSig &&
+			sub.OccurrenceIndex == OccurrenceIndex &&
+			sub.IsModify)
 		{
-			for (auto& sub : rec.SubRecords)
-			{
-				if (sub.Sig == ChildSig &&
-					sub.OccurrenceIndex == OccurrenceIndex &&
-					sub.IsModify)  
-				{
-					return &sub;
-				}
-			}
-			return nullptr;  
+			return &sub;
 		}
 	}
 
-	for (auto& rec : Data->CellRecords)
-	{
-		if (rec.FormID == FormID && rec.Sig == ParentSig)
-		{
-			for (auto& sub : rec.SubRecords)
-			{
-				if (sub.Sig == ChildSig &&
-					sub.OccurrenceIndex == OccurrenceIndex &&
-					sub.IsModify)
-				{
-					return &sub;
-				}
-			}
-			return nullptr;
-		}
-	}
-
-	return nullptr;  
+	return nullptr;
 }
 
 std::vector<uint8_t> ModifySubRecordsWithFilter(
 	const uint8_t* originalData,
 	size_t dataSize,
 	const std::string& parentSig,
-	uint32_t formID)
+	uint32_t formID,
+	const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
 {
 	std::vector<uint8_t> result;
 
 	auto originalSubs = ParseOriginalSubRecords(originalData, dataSize);
 
-	size_t offset = 0;
 	for (const auto& osr : originalSubs)
 	{
-		const SubRecordHeader* originalHeader =
-			reinterpret_cast<const SubRecordHeader*>(originalData + osr.OffsetInData);
-
 		const SubRecordData* modified = FindModifiedSubRecord(
+			modifiedIndex,
 			parentSig,
 			formID,
 			osr.Sig,
@@ -1273,7 +1290,8 @@ std::vector<uint8_t> ModifySubRecordsWithFilter(
 	return result;
 }
 
-bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
+bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
+	const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
 {
 	RecordHeader HDR{};
 	std::memcpy(HDR.Sig, Sig, 4);
@@ -1287,6 +1305,19 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 
 	std::vector<uint8_t> OriginalData(HDR.DataSize);
 	Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+
+	if (modifiedIndex.find(MakeRecordKey(HDR.FormID, Sig)) == modifiedIndex.end())
+	{
+		Fout.write(Sig, 4);
+		Fout.write(reinterpret_cast<const char*>(&HDR.DataSize), sizeof(HDR.DataSize));
+		Fout.write(reinterpret_cast<const char*>(&HDR.Flags), sizeof(HDR.Flags));
+		Fout.write(reinterpret_cast<const char*>(&HDR.FormID), sizeof(HDR.FormID));
+		Fout.write(reinterpret_cast<const char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
+		Fout.write(reinterpret_cast<const char*>(&HDR.Version), sizeof(HDR.Version));
+		Fout.write(reinterpret_cast<const char*>(&HDR.Unknown), sizeof(HDR.Unknown));
+		Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
+		return true;
+	}
 
 	std::vector<uint8_t> WorkingData;
 	bool WasCompressed = IsCompressed(HDR);
@@ -1329,7 +1360,8 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 		WorkingData.data(),
 		WorkingData.size(),
 		ParentSig,
-		HDR.FormID);
+		HDR.FormID,
+		modifiedIndex);
 
 	std::vector<uint8_t> FinalData;
 	if (WasCompressed)
@@ -1360,22 +1392,20 @@ bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 	Fout.write(reinterpret_cast<char*>(&HDR.FormID), sizeof(HDR.FormID));
 	Fout.write(reinterpret_cast<char*>(&HDR.VersionCtrl), sizeof(HDR.VersionCtrl));
 	Fout.write(reinterpret_cast<char*>(&HDR.Version), sizeof(HDR.Version));
-	Fout.write(reinterpret_cast<char*>(&HDR.Unknown), sizeof(HDR.Unknown));
 	Fout.write(reinterpret_cast<char*>(FinalData.data()), FinalData.size());
 
 	return true;
 }
 
-bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t RemainingSize)
+bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t RemainingSize,
+	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
 {
 	int64_t BytesProcessed = 0;
 
 	while (Fin.good() && Fin.peek() != EOF)
 	{
 		if (RemainingSize >= 0 && BytesProcessed >= RemainingSize)
-		{
 			break;
-		}
 
 		char Sig[4];
 		std::streampos PosBeforeSig = Fin.tellg();
@@ -1383,7 +1413,7 @@ bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Remaini
 
 		if (IsGRUP(Sig))
 		{
-			if (!ProcessGRUP(Fin, Fout, Sig))
+			if (!ProcessGRUP(Fin, Fout, Sig, ModifiedIndex))
 			{
 				std::cerr << "Error: Failed to process GRUP at position " << PosBeforeSig << "\n";
 				return false;
@@ -1391,7 +1421,7 @@ bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Remaini
 		}
 		else
 		{
-			if (!ProcessRecord(Fin, Fout, Sig))
+			if (!ProcessRecord(Fin, Fout, Sig, ModifiedIndex))
 			{
 				std::cerr << "Error: Failed to process record at position " << PosBeforeSig << "\n";
 				return false;
@@ -1406,7 +1436,8 @@ bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Remaini
 	return true;
 }
 
-bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
+bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
+	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
 {
 	GroupHeader GH{};
 	std::memcpy(GH.Sig, Sig, 4);
@@ -1430,12 +1461,10 @@ bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 
 	int64_t ContentSize = GH.Size - 24;
 
-	bool Success = ProcessGRUPContent(Fin, Fout, ContentSize);
+	bool Success = ProcessGRUPContent(Fin, Fout, ContentSize, ModifiedIndex);
 
 	if (!Success)
-	{
 		return false;
-	}
 
 	std::streampos GrupContentEnd = Fout.tellp();
 	uint32_t ActualContentSize = static_cast<uint32_t>(GrupContentEnd - GrupContentStart);
@@ -1444,7 +1473,7 @@ bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 	if (ActualGrupSize != GH.Size)
 	{
 		std::streampos SavedPos = Fout.tellp();
-		Fout.seekp(GrupHeaderPos + std::streamoff(4));
+		Fout.seekp(GrupHeaderPos + std::streamoff(4)); 
 		Fout.write(reinterpret_cast<char*>(&ActualGrupSize), sizeof(ActualGrupSize));
 		Fout.seekp(SavedPos);
 	}
@@ -1452,9 +1481,9 @@ bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4])
 	return true;
 }
 
-bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize)
+bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize,
+	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
 {
-	std::streampos ContentStart = Fin.tellg();
 	int64_t BytesProcessed = 0;
 
 	while (BytesProcessed < ContentSize && Fin.good())
@@ -1477,17 +1506,13 @@ bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Content
 
 		if (IsGRUP(Sig))
 		{
-			if (!ProcessGRUP(Fin, Fout, Sig))
-			{
+			if (!ProcessGRUP(Fin, Fout, Sig, ModifiedIndex))
 				return false;
-			}
 		}
 		else
 		{
-			if (!ProcessRecord(Fin, Fout, Sig))
-			{
+			if (!ProcessRecord(Fin, Fout, Sig, ModifiedIndex))
 				return false;
-			}
 		}
 
 		std::streampos PosAfterProcess = Fin.tellg();
@@ -1514,15 +1539,11 @@ bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t Content
 bool SaveEsp(const char* SavePath)
 {
 	if (LastSetPath.empty())
-	{
 		return false;
-	}
 
 	std::ifstream Fin(LastSetPath, std::ios::binary);
 	if (!Fin.is_open())
-	{
 		return false;
-	}
 
 	int Wlen = MultiByteToWideChar(CP_UTF8, 0, SavePath, -1, NULL, 0);
 	if (Wlen == 0)
@@ -1541,21 +1562,26 @@ bool SaveEsp(const char* SavePath)
 		return false;
 	}
 
-	bool Success = ProcessFileContent(Fin, Fout, -1);
+	static char readBuf[4 * 1024 * 1024];
+	static char writeBuf[4 * 1024 * 1024];
+	Fin.rdbuf()->pubsetbuf(readBuf, sizeof(readBuf));
+	Fout.rdbuf()->pubsetbuf(writeBuf, sizeof(writeBuf));
+
+	auto modifiedIndex = BuildModifiedIndex();
+	std::cout << "Modified records in index: " << modifiedIndex.size() << "\n";
+
+	bool Success = ProcessFileContent(Fin, Fout, -1, modifiedIndex);
 
 	Fin.close();
 	Fout.close();
 
 	if (Success)
-	{
 		std::cout << "Successfully saved modified ESP to: " << SavePath << "\n";
-	}
 	else
-	{
 		std::cerr << "Failed to save ESP file\n";
-	}
 
 	return Success;
 }
 
 #pragma endregion
+
