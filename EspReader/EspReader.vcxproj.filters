@@ -27,12 +27,18 @@
     <ClCompile Include="ESPHeuristicAnalysis.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CharacterTracker.h">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CharacterTrackerBuilder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="miniz.h">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="EspRecord.h">
+    <ClInclude Include="EspRecord.cpp">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="TextHelper.h">

@@ -127,13 +127,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CharacterTracker.h" />
+    <ClCompile Include="CharacterTrackerBuilder.cpp" />
     <ClCompile Include="ESPHeuristicAnalysis.cpp" />
     <ClCompile Include="EspReader.cpp" />
     <ClCompile Include="miniz.c" />
     <ClCompile Include="TextHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="EspRecord.h" />
+    <ClInclude Include="EspRecord.cpp" />
     <ClInclude Include="miniz.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="TextHelper.h" />
