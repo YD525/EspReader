@@ -974,8 +974,11 @@ int main()
 
 		void* P;
 		P = &EspRecord::GlobalCharacterTracker->Characters;
-		P = &EspRecord::GlobalCharacterTracker->GenericCharacters;
-		P = &EspRecord::GlobalCharacterTracker->InfoToNpcMap;
+
+		//Vaughn
+		vector<const CharacterRecord*> Test = EspRecord::GlobalCharacterTracker->SearchByName("Vaughn");
+
+		EspRecord::GlobalCharacterTracker->PrintStats();
 	}
 	else
 	{
