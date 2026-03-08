@@ -78,6 +78,8 @@ extern "C"
 	SSELex_API int      C_GetCharacterLinkedVoiceTypeCount(int Index);
 	SSELex_API uint32_t C_GetCharacterLinkedVoiceType(int Index, int LinkIndex);
 
+	SSELex_API void C_ClearCharacterTracker();
+
 	SSELex_API bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
 	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
 	SSELex_API bool C_SaveEsp(const char* Utf8Path);
@@ -1102,6 +1104,15 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 void C_Init()
 {
 	Init();
+}
+
+void C_ClearCharacterTracker()
+{
+	if (EspRecord::GlobalCharacterTracker)
+		EspRecord::GlobalCharacterTracker->ClearAll();
+
+	CharacterIndexCache.clear();
+	CharacterCacheDirty = true;
 }
 
 void C_Close()

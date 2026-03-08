@@ -128,8 +128,9 @@ class CharacterTracker
 
     size_t TotalCharacters() const { return Characters.size(); }
 
-    void Clear()
+    void ClearAll()
     {
         Characters.clear();
+        VoiceTypeToNPC.clear();
     }
 };

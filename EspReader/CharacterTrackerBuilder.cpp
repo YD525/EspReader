@@ -7,7 +7,7 @@ class CharacterTrackerBuilder
 public:
 	static void Build(const EspData& data, CharacterTracker& tracker)
 	{
-		tracker.Clear();
+		tracker.ClearAll();
 
 		BuildFromNpcRecords(data, tracker);
 	}
