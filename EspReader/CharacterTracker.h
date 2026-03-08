@@ -27,9 +27,7 @@ class CharacterRecord
     std::string     Name;           
     std::string     EditorID;       
     std::string     VoiceType;     
-    CharacterGender Gender;         
-    bool            IsGeneric;      
-
+    CharacterGender Gender;             
     std::vector<uint32_t> LinkedInfos;
     std::vector<uint32_t> LinkedFactions;    
     std::vector<uint32_t> LinkedRaces;       
@@ -39,7 +37,6 @@ class CharacterRecord
     CharacterRecord()
         : NpcFormID(0)
         , Gender(CharacterGender::Unknown)
-        , IsGeneric(false)
     {
     }
 
