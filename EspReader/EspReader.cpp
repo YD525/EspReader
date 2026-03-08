@@ -325,7 +325,6 @@ void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
 
 		offset += sizeof(SubRecordHeader) + sub->Size;
 	}
-
 	rec.OnRecordFinished(recordSig, nullptr, 0);
 }
 
@@ -333,6 +332,7 @@ void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
 void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec,
 	const RecordFilter& filter, const char recordSig[4])
 {
+	rec.OnRecordBegin();
 	uint32_t bytesRead = 0;
 	while (bytesRead < recordSize && f.good())
 	{
@@ -361,6 +361,7 @@ void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec
 
 		rec.AddSubRecord(sub.Sig, buf.data(), sub.Size,*TranslateFilter);
 	}
+	rec.OnRecordFinished(recordSig, nullptr, 0);
 }
 
 void ParseRecord(std::ifstream& f, const char Sig[4], EspData& doc, const RecordFilter& filter)
@@ -977,9 +978,7 @@ int main()
 		P = &EspRecord::GlobalCharacterTracker->Characters;
 
 		//Vaughn
-		vector<const CharacterRecord*> Test = EspRecord::GlobalCharacterTracker->SearchByName("Vaughn");
-
-		EspRecord::GlobalCharacterTracker->PrintStats();
+		vector<const CharacterRecord*> Test = EspRecord::GlobalCharacterTracker->SearchByName("Deneris");
 	}
 	else
 	{

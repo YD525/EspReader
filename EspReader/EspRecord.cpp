@@ -309,7 +309,7 @@ struct SubRecordData
 
 class EspRecord
 {
-public:
+	public:
 	std::string Sig;
 	uint32_t FormID;
 	uint32_t Flags;
@@ -501,10 +501,6 @@ public:
 		return true;
 	}
 
-	std::vector<uint32_t> PendingActors;
-	std::vector<uint32_t> PendingVoiceTypes;
-	std::vector<uint32_t> PendingFactions;
-	std::vector<uint32_t> PendingRaces;
 
 	void CollectForTracker(const std::string& SubSig, const uint8_t* DataPtr, size_t Size)
 	{
@@ -530,15 +526,22 @@ public:
 
 	void OnRecordBegin()
 	{
-		
 	}
 
 	std::string G_Name;
 	std::string G_VoiceType;
 	CharacterGender G_Gender = CharacterGender::Unknown;
 
-	void OnRecord(SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
+	std::vector<uint32_t> G_PendingActors;
+	std::vector<uint32_t> G_PendingVoiceTypes;
+	std::vector<uint32_t> G_PendingFactions;
+	std::vector<uint32_t> G_PendingRaces;
+
+	void OnSubRecord(SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
 	{
+		if (!GlobalCharacterTracker)
+			return;
+
 		if (GlobalCharacterTracker && DataPtr && Size > 0)
 		{
 			CollectForTracker(Sub.Sig, DataPtr, Size);
@@ -564,9 +567,9 @@ public:
 				uint32_t actor;
 				std::memcpy(&actor, DataPtr, 4);
 
-				PendingActors.push_back(actor);
+				G_PendingActors.push_back(actor);
 			}
-
+			else
 			if (Sub.Sig == "CTDA" && Size >= 12)
 			{
 				uint16_t FunctionID;
@@ -578,19 +581,19 @@ public:
 				switch (FunctionID)
 				{
 				case 72: // GetIsID
-					PendingActors.push_back(Param1);
+					G_PendingActors.push_back(Param1);
 					break;
 
 				case 97: // GetIsVoiceType
-					PendingVoiceTypes.push_back(Param1);
+					G_PendingVoiceTypes.push_back(Param1);
 					break;
 
 				case 32: // GetInFaction
-					PendingFactions.push_back(Param1);
+					G_PendingFactions.push_back(Param1);
 					break;
 
 				case 69: // GetIsRace
-					PendingRaces.push_back(Param1);
+					G_PendingRaces.push_back(Param1);
 					break;
 				}
 			}
@@ -611,7 +614,6 @@ public:
 
 			auto& npc = GlobalCharacterTracker->RegisterNpc(FormID, Name, EditorID, VoiceType, Gender);
 
-
 			if (HasPendingVTCK)
 			{
 				GlobalCharacterTracker->VoiceTypeToNPC[PendingVTCK] = FormID;
@@ -624,74 +626,63 @@ public:
 			}
 		}
 
-
-		if (Sig == "INFO")
+		if (!G_PendingActors.empty() || !G_PendingVoiceTypes.empty() || !G_PendingFactions.empty() || !G_PendingRaces.empty())
 		{
-			InfoCharacterLink link;
-			link.InfoFormID = FormID;
-			link.RecordSig = Sig;
-
-			std::vector<uint32_t> RelatedNPCs;
-
-			for (auto npcID : PendingActors)
+			for (auto NpcID : G_PendingActors)
 			{
-				auto it = GlobalCharacterTracker->Characters.find(npcID);
+				auto it = GlobalCharacterTracker->Characters.find(NpcID);
 				if (it != GlobalCharacterTracker->Characters.end())
 				{
-					link.CharacterEditorIDs.push_back(it->second.EditorID);
-					RelatedNPCs.push_back(npcID);
-
 					it->second.LinkedInfos.push_back(FormID);
 				}
 			}
 
-			for (auto vt : PendingVoiceTypes)
+			for (auto VoiceType : G_PendingVoiceTypes)
 			{
-				auto it = GlobalCharacterTracker->VoiceTypeToNPC.find(vt);
-				if (it != GlobalCharacterTracker->VoiceTypeToNPC.end())
+				auto It = GlobalCharacterTracker->VoiceTypeToNPC.find(VoiceType);
+				if (It != GlobalCharacterTracker->VoiceTypeToNPC.end())
 				{
-					uint32_t npcID = it->second;
-					auto chr = GlobalCharacterTracker->Characters.find(npcID);
+					uint32_t NpcID = It->second;
+					auto chr = GlobalCharacterTracker->Characters.find(NpcID);
 					if (chr != GlobalCharacterTracker->Characters.end())
 					{
-						link.CharacterEditorIDs.push_back(chr->second.EditorID);
-						RelatedNPCs.push_back(npcID);
-
-						chr->second.LinkedVoiceTypes.push_back(vt);
+						chr->second.LinkedVoiceTypes.push_back(VoiceType);
 					}
 				}
 			}
 
-			for (auto faction : PendingFactions)
+			for (auto Faction : G_PendingFactions)
 			{
-				for (auto npcID : PendingActors)
+				for (auto NpcID : G_PendingActors)
 				{
-					auto it = GlobalCharacterTracker->Characters.find(npcID);
-					if (it != GlobalCharacterTracker->Characters.end())
+					auto It = GlobalCharacterTracker->Characters.find(NpcID);
+					if (It != GlobalCharacterTracker->Characters.end())
 					{
-						it->second.LinkedFactions.push_back(faction);
+						It->second.LinkedFactions.push_back(Faction);
 					}
 				}
 			}
 
-			for (auto race : PendingRaces)
+			for (auto Race : G_PendingRaces)
 			{
-				for (auto npcID : PendingActors)
+				for (auto NpcID : G_PendingActors)
 				{
-					auto it = GlobalCharacterTracker->Characters.find(npcID);
-					if (it != GlobalCharacterTracker->Characters.end())
+					auto It = GlobalCharacterTracker->Characters.find(NpcID);
+					if (It != GlobalCharacterTracker->Characters.end())
 					{
-						it->second.LinkedRaces.push_back(race);
+						It->second.LinkedRaces.push_back(Race);
 					}
 				}
 			}
-
-			GlobalCharacterTracker->InfoLinks[FormID] = link;
 		}
-
+		
 		G_Name.clear();
 		G_VoiceType.clear();
 		G_Gender = CharacterGender::Unknown;
+		G_PendingActors.clear();
+		G_PendingVoiceTypes.clear();
+		G_PendingFactions.clear();
+		G_PendingRaces.clear();
 	}
 
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
@@ -716,7 +707,9 @@ public:
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
 
-			bool IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr, 4);
+			bool IsLocalizedField = false;
+
+			IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr, 4);
 
 			if (IsLocalizedField)
 			{
@@ -732,7 +725,7 @@ public:
 				Sub.StringID = 0;
 			}
 
-			OnRecord(Sub, DataPtr, Size);
+			OnSubRecord(Sub, DataPtr, Size);
 		}
 
 		if (Sub.Sig == "EDID")
