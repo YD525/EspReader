@@ -30,9 +30,6 @@
     <ClCompile Include="CharacterTracker.h">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CharacterTrackerBuilder.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="miniz.h">

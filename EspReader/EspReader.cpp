@@ -314,6 +314,7 @@ RecordFilter* TranslateFilter;
 void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
 	const RecordFilter& filter, const char recordSig[4])
 {
+	rec.OnRecordBegin();
 	size_t offset = 0;
 	while (offset + sizeof(SubRecordHeader) <= dataSize)
 	{
@@ -324,6 +325,8 @@ void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
 
 		offset += sizeof(SubRecordHeader) + sub->Size;
 	}
+
+	rec.OnRecordFinished(recordSig, nullptr, 0);
 }
 
 // Parse subrecords from stream with filter
@@ -741,8 +744,6 @@ int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 			ParseRecord(F, Sig, *Data, Filter);
 		}
 	}
-
-	CharacterTrackerBuilder::Build(*Data, *EspRecord::GlobalCharacterTracker);
 
 	return 0;
 }

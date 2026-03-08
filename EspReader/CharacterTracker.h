@@ -14,31 +14,28 @@ enum class CharacterGender
     Female
 };
 
-struct RecordSign
+struct InfoCharacterLink
 {
-    uint32_t    FormID;         
-    std::string RecordSig;     
-    std::string SubSig;        
-
-    RecordSign(uint32_t FormID, const std::string& Sig,
-        const std::string& Sub = "",
-        int index = -1)
-        : FormID(FormID)
-        , RecordSig(Sig)
-        , SubSig(Sub)
-    {
-    }
+    uint32_t InfoFormID;
+    std::string RecordSig;                  
+    std::vector<std::string> CharacterEditorIDs;
 };
 
 class CharacterRecord
 {
-public:
+    public:
     uint32_t        NpcFormID;      
     std::string     Name;           
     std::string     EditorID;       
     std::string     VoiceType;     
     CharacterGender Gender;         
     bool            IsGeneric;      
+
+    std::vector<uint32_t> LinkedInfos;       
+    std::vector<uint32_t> LinkedFactions;    
+    std::vector<uint32_t> LinkedRaces;       
+    std::vector<uint32_t> LinkedVoiceTypes; 
+
 
     CharacterRecord()
         : NpcFormID(0)
@@ -83,8 +80,12 @@ class CharacterTracker
 {
     public:
     std::unordered_map<uint32_t, CharacterRecord> Characters;
+    std::unordered_map<uint32_t, InfoCharacterLink> InfoLinks;
+    std::unordered_map<uint32_t, uint32_t> VoiceTypeToNPC;
 
-    CharacterRecord& RegisterNpc(uint32_t NpcFormID,const std::string& Name,const std::string& EditorID,const std::string& VoiceType,CharacterGender Gender = CharacterGender::Unknown)
+    CharacterRecord& RegisterNpc(uint32_t NpcFormID, const std::string& Name,
+        const std::string& EditorID, const std::string& VoiceType,
+        CharacterGender Gender = CharacterGender::Unknown)
     {
         auto& Record = Characters[NpcFormID];
         Record.NpcFormID = NpcFormID;
@@ -97,6 +98,11 @@ class CharacterTracker
             Record.Gender = CharacterRecord::InferGenderFromVoiceType(VoiceType);
         else if (Gender != CharacterGender::Unknown)
             Record.Gender = Gender;
+
+        Record.LinkedInfos.clear();
+        Record.LinkedFactions.clear();
+        Record.LinkedRaces.clear();
+        Record.LinkedVoiceTypes.clear();
 
         return Record;
     }

@@ -501,6 +501,10 @@ public:
 		return true;
 	}
 
+	std::vector<uint32_t> PendingActors;
+	std::vector<uint32_t> PendingVoiceTypes;
+	std::vector<uint32_t> PendingFactions;
+	std::vector<uint32_t> PendingRaces;
 
 	void CollectForTracker(const std::string& SubSig, const uint8_t* DataPtr, size_t Size)
 	{
@@ -523,6 +527,173 @@ public:
 			HasPendingANAM = true;
 		}
 	}
+
+	void OnRecordBegin()
+	{
+		
+	}
+
+	std::string G_Name;
+	std::string G_VoiceType;
+	CharacterGender G_Gender = CharacterGender::Unknown;
+
+	void OnRecord(SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
+	{
+		if (GlobalCharacterTracker && DataPtr && Size > 0)
+		{
+			CollectForTracker(Sub.Sig, DataPtr, Size);
+		}
+
+		if (Sub.Sig == "FULL" || Sub.Sig == "FNAM")
+		{
+			G_Name = Sub.GetString();
+		}
+		else if (Sub.Sig == "VTCK")
+		{
+			G_VoiceType = Sub.GetString();
+		}
+		else if (Sub.Sig == "ACBS")
+		{
+			G_Gender = PendingGenderFromACBS;
+		}
+
+		if (Sig == "INFO")
+		{
+			if (Sub.Sig == "ANAM" && Size >= 4)
+			{
+				uint32_t actor;
+				std::memcpy(&actor, DataPtr, 4);
+
+				PendingActors.push_back(actor);
+			}
+
+			if (Sub.Sig == "CTDA" && Size >= 12)
+			{
+				uint16_t FunctionID;
+				std::memcpy(&FunctionID, DataPtr + 4, 2);
+
+				uint32_t Param1;
+				std::memcpy(&Param1, DataPtr + 8, 4);
+
+				switch (FunctionID)
+				{
+				case 72: // GetIsID
+					PendingActors.push_back(Param1);
+					break;
+
+				case 97: // GetIsVoiceType
+					PendingVoiceTypes.push_back(Param1);
+					break;
+
+				case 32: // GetInFaction
+					PendingFactions.push_back(Param1);
+					break;
+
+				case 69: // GetIsRace
+					PendingRaces.push_back(Param1);
+					break;
+				}
+			}
+		}
+	}
+
+	void OnRecordFinished(const char* Str, const uint8_t* DataPtr, size_t Size)
+	{
+		if (Sig == "NPC_")
+		{
+			std::string Name = G_Name;
+			std::string EditorID = this->GetEditorID();
+			std::string VoiceType = G_VoiceType;
+			CharacterGender Gender = G_Gender;
+
+			if (HasPendingACBS)
+				Gender = PendingGenderFromACBS;
+
+			auto& npc = GlobalCharacterTracker->RegisterNpc(FormID, Name, EditorID, VoiceType, Gender);
+
+
+			if (HasPendingVTCK)
+			{
+				GlobalCharacterTracker->VoiceTypeToNPC[PendingVTCK] = FormID;
+				npc.LinkedVoiceTypes.push_back(PendingVTCK); 
+			}
+
+			if (!VoiceType.empty() && npc.Gender == CharacterGender::Unknown)
+			{
+				npc.Gender = CharacterRecord::InferGenderFromVoiceType(VoiceType);
+			}
+		}
+
+
+		if (Sig == "INFO")
+		{
+			InfoCharacterLink link;
+			link.InfoFormID = FormID;
+			link.RecordSig = Sig;
+
+			std::vector<uint32_t> RelatedNPCs;
+
+			for (auto npcID : PendingActors)
+			{
+				auto it = GlobalCharacterTracker->Characters.find(npcID);
+				if (it != GlobalCharacterTracker->Characters.end())
+				{
+					link.CharacterEditorIDs.push_back(it->second.EditorID);
+					RelatedNPCs.push_back(npcID);
+
+					it->second.LinkedInfos.push_back(FormID);
+				}
+			}
+
+			for (auto vt : PendingVoiceTypes)
+			{
+				auto it = GlobalCharacterTracker->VoiceTypeToNPC.find(vt);
+				if (it != GlobalCharacterTracker->VoiceTypeToNPC.end())
+				{
+					uint32_t npcID = it->second;
+					auto chr = GlobalCharacterTracker->Characters.find(npcID);
+					if (chr != GlobalCharacterTracker->Characters.end())
+					{
+						link.CharacterEditorIDs.push_back(chr->second.EditorID);
+						RelatedNPCs.push_back(npcID);
+
+						chr->second.LinkedVoiceTypes.push_back(vt);
+					}
+				}
+			}
+
+			for (auto faction : PendingFactions)
+			{
+				for (auto npcID : PendingActors)
+				{
+					auto it = GlobalCharacterTracker->Characters.find(npcID);
+					if (it != GlobalCharacterTracker->Characters.end())
+					{
+						it->second.LinkedFactions.push_back(faction);
+					}
+				}
+			}
+
+			for (auto race : PendingRaces)
+			{
+				for (auto npcID : PendingActors)
+				{
+					auto it = GlobalCharacterTracker->Characters.find(npcID);
+					if (it != GlobalCharacterTracker->Characters.end())
+					{
+						it->second.LinkedRaces.push_back(race);
+					}
+				}
+			}
+
+			GlobalCharacterTracker->InfoLinks[FormID] = link;
+		}
+
+		G_Name.clear();
+		G_VoiceType.clear();
+		G_Gender = CharacterGender::Unknown;
+	}
+
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
@@ -560,6 +731,8 @@ public:
 				Sub.IsLocalized = false;
 				Sub.StringID = 0;
 			}
+
+			OnRecord(Sub, DataPtr, Size);
 		}
 
 		if (Sub.Sig == "EDID")
@@ -569,11 +742,6 @@ public:
 			this->EditorID = EditorIDValue;
 
 			return;
-		}
-
-		if (GlobalCharacterTracker && DataPtr && Size > 0)
-		{
-			CollectForTracker(Sub.Sig, DataPtr, Size);
 		}
 
 		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
