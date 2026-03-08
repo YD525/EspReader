@@ -61,6 +61,23 @@ extern "C"
 	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
 
+	SSELex_API int      C_GetCharacterCount();
+
+	SSELex_API uint32_t C_GetCharacterFormID(int Index);
+	SSELex_API int      C_GetCharacterName(int Index, uint8_t* Buffer, int BufferSize);
+	SSELex_API int      C_GetCharacterEditorID(int Index, uint8_t* Buffer, int BufferSize);
+	SSELex_API int      C_GetCharacterVoiceType(int Index, uint8_t* Buffer, int BufferSize);
+	SSELex_API int      C_GetCharacterGender(int Index); 
+
+	SSELex_API int      C_GetCharacterLinkedInfoCount(int Index);
+	SSELex_API uint32_t C_GetCharacterLinkedInfo(int Index, int LinkIndex);
+	SSELex_API int      C_GetCharacterLinkedFactionCount(int Index);
+	SSELex_API uint32_t C_GetCharacterLinkedFaction(int Index, int LinkIndex);
+	SSELex_API int      C_GetCharacterLinkedRaceCount(int Index);
+	SSELex_API uint32_t C_GetCharacterLinkedRace(int Index, int LinkIndex);
+	SSELex_API int      C_GetCharacterLinkedVoiceTypeCount(int Index);
+	SSELex_API uint32_t C_GetCharacterLinkedVoiceType(int Index, int LinkIndex);
+
 	SSELex_API bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
 	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
 	SSELex_API bool C_SaveEsp(const char* Utf8Path);
@@ -69,7 +86,7 @@ extern "C"
 	SSELex_API void C_Close();
 }
 
-static const std::string Version = "1.2.7";
+static const std::string Version = "1.2.8";
 
 const char* C_GetVersion()
 {
@@ -244,6 +261,190 @@ int C_GetSubRecordCount(EspRecord* record)
 	return static_cast<int>(record->SubRecords.size());
 }
 
+static std::vector<const CharacterRecord*> CharacterIndexCache;
+static bool CharacterCacheDirty = true;
+
+static std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredInfoLinks;
+static std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredVoiceTypeLinks;
+static std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredFactionLinks;
+static std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredRaceLinks;
+
+static void EnsureCharacterCache()
+{
+	if (!CharacterCacheDirty) return;
+
+	CharacterIndexCache.clear();
+
+	if (!EspRecord::GlobalCharacterTracker) return;
+
+	for (const auto& KV : EspRecord::GlobalCharacterTracker->Characters)
+		CharacterIndexCache.push_back(&KV.second);
+
+	CharacterCacheDirty = false;
+}
+
+static int WriteStringToBuffer(const std::string& Str, uint8_t* Buffer, int BufferSize)
+{
+	int Len = static_cast<int>(Str.size());
+	if (Buffer && BufferSize > Len)
+	{
+		std::memcpy(Buffer, Str.c_str(), Len);
+		Buffer[Len] = 0;
+	}
+	return Len;
+}
+
+static const CharacterRecord* GetCharacterAt(int Index)
+{
+	EnsureCharacterCache();
+	if (Index < 0 || Index >= static_cast<int>(CharacterIndexCache.size()))
+		return nullptr;
+	return CharacterIndexCache[Index];
+}
+
+static void FlushDeferredInfoLinks()
+{
+	if (!EspRecord::GlobalCharacterTracker) return;
+
+	for (auto& kv : DeferredInfoLinks)
+	{
+		auto it = EspRecord::GlobalCharacterTracker->Characters.find(kv.first);
+		if (it != EspRecord::GlobalCharacterTracker->Characters.end())
+			for (uint32_t fid : kv.second)
+				it->second.LinkedInfos.push_back(fid);
+	}
+
+	for (auto& kv : DeferredVoiceTypeLinks)
+	{
+		auto vtIt = EspRecord::GlobalCharacterTracker->VoiceTypeToNPC.find(kv.first);
+		if (vtIt != EspRecord::GlobalCharacterTracker->VoiceTypeToNPC.end())
+		{
+			uint32_t NpcID = vtIt->second;
+			auto chr = EspRecord::GlobalCharacterTracker->Characters.find(NpcID);
+			if (chr != EspRecord::GlobalCharacterTracker->Characters.end())
+				for (uint32_t fid : kv.second)
+					chr->second.LinkedVoiceTypes.push_back(fid);
+		}
+	}
+
+	for (auto& kv : DeferredFactionLinks)
+	{
+		auto it = EspRecord::GlobalCharacterTracker->Characters.find(kv.first);
+		if (it != EspRecord::GlobalCharacterTracker->Characters.end())
+			for (uint32_t fid : kv.second)
+				it->second.LinkedFactions.push_back(fid);
+	}
+
+	for (auto& kv : DeferredRaceLinks)
+	{
+		auto it = EspRecord::GlobalCharacterTracker->Characters.find(kv.first);
+		if (it != EspRecord::GlobalCharacterTracker->Characters.end())
+			for (uint32_t fid : kv.second)
+				it->second.LinkedRaces.push_back(fid);
+	}
+
+	DeferredInfoLinks.clear();
+	DeferredVoiceTypeLinks.clear();
+	DeferredFactionLinks.clear();
+	DeferredRaceLinks.clear();
+}
+
+int C_GetCharacterCount()
+{
+	EnsureCharacterCache();
+	return static_cast<int>(CharacterIndexCache.size());
+}
+
+uint32_t C_GetCharacterFormID(int Index)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	return R ? R->NpcFormID : 0;
+}
+
+int C_GetCharacterName(int Index, uint8_t* Buffer, int BufferSize)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R) return -1;
+	return WriteStringToBuffer(R->Name, Buffer, BufferSize);
+}
+
+int C_GetCharacterEditorID(int Index, uint8_t* Buffer, int BufferSize)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R) return -1;
+	return WriteStringToBuffer(R->EditorID, Buffer, BufferSize);
+}
+
+int C_GetCharacterVoiceType(int Index, uint8_t* Buffer, int BufferSize)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R) return -1;
+	return WriteStringToBuffer(R->VoiceType, Buffer, BufferSize);
+}
+
+int C_GetCharacterGender(int Index)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R) return 0;
+	switch (R->Gender)
+	{
+	case CharacterGender::Male:   return 1;
+	case CharacterGender::Female: return 2;
+	default:                      return 0;
+	}
+}
+
+int C_GetCharacterLinkedInfoCount(int Index)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	return R ? static_cast<int>(R->LinkedInfos.size()) : 0;
+}
+
+uint32_t C_GetCharacterLinkedInfo(int Index, int LinkIndex)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R || LinkIndex < 0 || LinkIndex >= static_cast<int>(R->LinkedInfos.size())) return 0;
+	return R->LinkedInfos[LinkIndex];
+}
+
+int C_GetCharacterLinkedFactionCount(int Index)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	return R ? static_cast<int>(R->LinkedFactions.size()) : 0;
+}
+
+uint32_t C_GetCharacterLinkedFaction(int Index, int LinkIndex)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R || LinkIndex < 0 || LinkIndex >= static_cast<int>(R->LinkedFactions.size())) return 0;
+	return R->LinkedFactions[LinkIndex];
+}
+
+int C_GetCharacterLinkedRaceCount(int Index)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	return R ? static_cast<int>(R->LinkedRaces.size()) : 0;
+}
+
+uint32_t C_GetCharacterLinkedRace(int Index, int LinkIndex)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R || LinkIndex < 0 || LinkIndex >= static_cast<int>(R->LinkedRaces.size())) return 0;
+	return R->LinkedRaces[LinkIndex];
+}
+
+int C_GetCharacterLinkedVoiceTypeCount(int Index)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	return R ? static_cast<int>(R->LinkedVoiceTypes.size()) : 0;
+}
+
+uint32_t C_GetCharacterLinkedVoiceType(int Index, int LinkIndex)
+{
+	const CharacterRecord* R = GetCharacterAt(Index);
+	if (!R || LinkIndex < 0 || LinkIndex >= static_cast<int>(R->LinkedVoiceTypes.size())) return 0;
+	return R->LinkedVoiceTypes[LinkIndex];
+}
 
 void Close();
 
@@ -721,6 +922,7 @@ int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 	EspRecord::GlobalCharacterTracker = new CharacterTracker();
 
 	Clear();
+
 	LastSetPath = EspPath;
 	Data = new EspData();
 
@@ -745,6 +947,9 @@ int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
 			ParseRecord(F, Sig, *Data, Filter);
 		}
 	}
+
+	FlushDeferredInfoLinks(); 
+	CharacterCacheDirty = true;
 
 	return 0;
 }
@@ -1129,6 +1334,14 @@ void Clear()
 {
 	delete Data;
 	Data = nullptr;
+
+	CharacterIndexCache.clear();   
+	CharacterCacheDirty = true;    
+
+	DeferredInfoLinks.clear();
+	DeferredVoiceTypeLinks.clear();
+	DeferredFactionLinks.clear();
+	DeferredRaceLinks.clear();
 
 	LastSetPath = TEXT("");
 }

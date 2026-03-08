@@ -10,6 +10,10 @@
 #endif
 #include "CharacterTracker.h"
 
+extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredInfoLinks;
+extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredVoiceTypeLinks;
+extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredFactionLinks;
+extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredRaceLinks;
 
 // ===== Record Filter Configuration =====
 class RecordFilter
@@ -617,16 +621,41 @@ class EspRecord
 			if (HasPendingVTCK)
 			{
 				GlobalCharacterTracker->VoiceTypeToNPC[PendingVTCK] = FormID;
-				npc.LinkedVoiceTypes.push_back(PendingVTCK); 
+				npc.LinkedVoiceTypes.push_back(PendingVTCK);
 			}
 
 			if (!VoiceType.empty() && npc.Gender == CharacterGender::Unknown)
-			{
 				npc.Gender = CharacterRecord::InferGenderFromVoiceType(VoiceType);
+
+			{
+				auto itInfo = DeferredInfoLinks.find(FormID);
+				if (itInfo != DeferredInfoLinks.end())
+				{
+					for (uint32_t InfoFID : itInfo->second)
+						npc.LinkedInfos.push_back(InfoFID);
+					DeferredInfoLinks.erase(itInfo);
+				}
+
+				auto itFaction = DeferredFactionLinks.find(FormID);
+				if (itFaction != DeferredFactionLinks.end())
+				{
+					for (uint32_t FactionFID : itFaction->second)
+						npc.LinkedFactions.push_back(FactionFID);
+					DeferredFactionLinks.erase(itFaction);
+				}
+
+				auto itRace = DeferredRaceLinks.find(FormID);
+				if (itRace != DeferredRaceLinks.end())
+				{
+					for (uint32_t RaceFID : itRace->second)
+						npc.LinkedRaces.push_back(RaceFID);
+					DeferredRaceLinks.erase(itRace);
+				}
 			}
 		}
 
-		if (!G_PendingActors.empty() || !G_PendingVoiceTypes.empty() || !G_PendingFactions.empty() || !G_PendingRaces.empty())
+		if (!G_PendingActors.empty() || !G_PendingVoiceTypes.empty()
+			|| !G_PendingFactions.empty() || !G_PendingRaces.empty())
 		{
 			for (auto NpcID : G_PendingActors)
 			{
@@ -635,19 +664,25 @@ class EspRecord
 				{
 					it->second.LinkedInfos.push_back(FormID);
 				}
+				else
+				{
+					DeferredInfoLinks[NpcID].push_back(FormID);
+				}
 			}
 
-			for (auto VoiceType : G_PendingVoiceTypes)
+			for (auto VoiceTypeFID : G_PendingVoiceTypes)
 			{
-				auto It = GlobalCharacterTracker->VoiceTypeToNPC.find(VoiceType);
+				auto It = GlobalCharacterTracker->VoiceTypeToNPC.find(VoiceTypeFID);
 				if (It != GlobalCharacterTracker->VoiceTypeToNPC.end())
 				{
 					uint32_t NpcID = It->second;
 					auto chr = GlobalCharacterTracker->Characters.find(NpcID);
 					if (chr != GlobalCharacterTracker->Characters.end())
-					{
-						chr->second.LinkedVoiceTypes.push_back(VoiceType);
-					}
+						chr->second.LinkedVoiceTypes.push_back(VoiceTypeFID);
+				}
+				else
+				{
+					DeferredVoiceTypeLinks[VoiceTypeFID].push_back(FormID);
 				}
 			}
 
@@ -659,6 +694,10 @@ class EspRecord
 					if (It != GlobalCharacterTracker->Characters.end())
 					{
 						It->second.LinkedFactions.push_back(Faction);
+					}
+					else
+					{
+						DeferredFactionLinks[NpcID].push_back(Faction);
 					}
 				}
 			}
@@ -672,10 +711,14 @@ class EspRecord
 					{
 						It->second.LinkedRaces.push_back(Race);
 					}
+					else
+					{
+						DeferredRaceLinks[NpcID].push_back(Race);
+					}
 				}
 			}
 		}
-		
+
 		G_Name.clear();
 		G_VoiceType.clear();
 		G_Gender = CharacterGender::Unknown;

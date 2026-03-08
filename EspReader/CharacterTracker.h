@@ -33,13 +33,6 @@ class CharacterRecord
     std::vector<uint32_t> LinkedRaces;       
     std::vector<uint32_t> LinkedVoiceTypes; 
 
-
-    CharacterRecord()
-        : NpcFormID(0)
-        , Gender(CharacterGender::Unknown)
-    {
-    }
-
     static CharacterGender InferGenderFromVoiceType(const std::string& VoiceType)
     {
         if (VoiceType.empty()) return CharacterGender::Unknown;
@@ -82,6 +75,8 @@ class CharacterTracker
         const std::string& EditorID, const std::string& VoiceType,
         CharacterGender Gender)
     {
+        bool IsNew = Characters.find(NpcFormID) == Characters.end();
+
         auto& Record = Characters[NpcFormID];
         Record.NpcFormID = NpcFormID;
 
@@ -90,10 +85,14 @@ class CharacterTracker
         if (!VoiceType.empty()) Record.VoiceType = VoiceType;
 
         Record.Gender = Gender;
-        Record.LinkedInfos.clear();
-        Record.LinkedFactions.clear();
-        Record.LinkedRaces.clear();
-        Record.LinkedVoiceTypes.clear();
+
+        if (IsNew) 
+        {
+            Record.LinkedInfos.clear();
+            Record.LinkedFactions.clear();
+            Record.LinkedRaces.clear();
+            Record.LinkedVoiceTypes.clear();
+        }
 
         return Record;
     }
