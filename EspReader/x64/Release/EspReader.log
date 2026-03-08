@@ -1,6 +1,4 @@
-﻿  CharacterTracker.h
-  CharacterTrackerBuilder.cpp
-  ESPHeuristicAnalysis.cpp
+﻿  CharacterTrackerBuilder.cpp
   EspReader.cpp
 C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(74,13): warning C4273: 'C_GetVersion': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(30,25):
@@ -145,11 +143,9 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1128,6): warning C
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(68,18):
       see previous definition of 'C_Clear'
   
-  TextHelper.cpp
-  miniz.c
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
-  Previous IPDB not found, fall back to full compilation.
-  All 2866 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Previous IPDB and IOBJ mismatch, fall back to full compilation.
+  All 2890 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
-  EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll
+  EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exe

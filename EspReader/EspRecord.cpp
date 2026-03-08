@@ -309,7 +309,7 @@ struct SubRecordData
 
 class EspRecord
 {
-	public:
+public:
 	std::string Sig;
 	uint32_t FormID;
 	uint32_t Flags;
@@ -318,7 +318,7 @@ class EspRecord
 	uint8_t LastEPFT;
 	bool HasEPFT;
 	int Index;
-    std::string EditorID;
+	std::string EditorID;
 
 	static CharacterTracker* GlobalCharacterTracker;
 	uint32_t        PendingVTCK = 0;
@@ -329,7 +329,7 @@ class EspRecord
 	bool            HasPendingACBS = false;
 
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
-		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0),EditorID("")
+		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0), EditorID("")
 	{
 	}
 
@@ -339,8 +339,8 @@ class EspRecord
 		, Flags(other.Flags)
 		, SubRecords(other.SubRecords)
 		, TotalOccurrenceCount(other.TotalOccurrenceCount)
-		, LastEPFT(other.LastEPFT)     
-		, HasEPFT(other.HasEPFT)       
+		, LastEPFT(other.LastEPFT)
+		, HasEPFT(other.HasEPFT)
 		, Index(other.Index)
 		, EditorID(other.EditorID)
 	{
@@ -357,7 +357,7 @@ class EspRecord
 			SubRecords = other.SubRecords;
 			TotalOccurrenceCount = other.TotalOccurrenceCount;
 			LastEPFT = other.LastEPFT;
-	        HasEPFT = other.HasEPFT;
+			HasEPFT = other.HasEPFT;
 			Index = other.Index;
 			EditorID = other.EditorID;
 		}
@@ -468,7 +468,7 @@ class EspRecord
 			else if (c == '\n' || c == '\r' || c == '\t')
 				printable++;
 			else if (c >= 0x80)
-				printable++; 
+				printable++;
 		}
 
 		if (printable == 0)
@@ -502,6 +502,27 @@ class EspRecord
 	}
 
 
+	void CollectForTracker(const std::string& SubSig, const uint8_t* DataPtr, size_t Size)
+	{
+		if (Sig == "NPC_" && SubSig == "ACBS" && Size >= 3)
+		{
+			uint8_t SexFlag = DataPtr[2];
+			PendingGenderFromACBS = (SexFlag & 0x01)
+				? CharacterGender::Female
+				: CharacterGender::Male;
+			HasPendingACBS = true;
+		}
+		else if (Sig == "NPC_" && SubSig == "VTCK" && Size >= 4)
+		{
+			std::memcpy(&PendingVTCK, DataPtr, 4);
+			HasPendingVTCK = true;
+		}
+		else if (Sig == "INFO" && SubSig == "ANAM" && Size >= 4)
+		{
+			std::memcpy(&PendingANAM, DataPtr, 4);
+			HasPendingANAM = true;
+		}
+	}
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
@@ -523,8 +544,8 @@ class EspRecord
 		if (DataPtr && Size > 0)
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
-		
-			bool IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr,4);
+
+			bool IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr, 4);
 
 			if (IsLocalizedField)
 			{
@@ -562,10 +583,10 @@ class EspRecord
 				SubRecords.push_back(Sub);
 			}
 			else
-			if (CanTranslateSub(*this, Sub))
-			{
-				SubRecords.push_back(Sub);
-			}
+				if (CanTranslateSub(*this, Sub))
+				{
+					SubRecords.push_back(Sub);
+				}
 		}
 	}
 
@@ -620,33 +641,12 @@ class EspRecord
 	}
 
 
-	private:
-		void CollectForTracker(const std::string& SubSig, const uint8_t* DataPtr, size_t Size)
-		{
-			if (Sig == "NPC_" && SubSig == "ACBS" && Size >= 3)
-			{
-				uint8_t sexFlag = DataPtr[2];
-				PendingGenderFromACBS = (sexFlag & 0x01)
-					? CharacterGender::Female
-					: CharacterGender::Male;
-				HasPendingACBS = true;
-			}
-			else if (Sig == "NPC_" && SubSig == "VTCK" && Size >= 4)
-			{
-				std::memcpy(&PendingVTCK, DataPtr, 4);
-				HasPendingVTCK = true;
-			}
-			else if (Sig == "INFO" && SubSig == "ANAM" && Size >= 4)
-			{
-				std::memcpy(&PendingANAM, DataPtr, 4);
-				HasPendingANAM = true;
-			}
-		}
+
 };
 
 class EspData
 {
-	public:
+public:
 	std::vector<EspRecord> Records;
 	std::unordered_map<std::string, size_t> RecordIndex;
 	std::unordered_set<uint32_t> FormIDs;

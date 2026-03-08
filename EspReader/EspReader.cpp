@@ -971,6 +971,11 @@ int main()
 		std::cout << "CellCount: " << Data->SearchBySig("CELL").size() << "\n\n";
 
 		GetCanTransCount();
+
+		void* P;
+		P = &EspRecord::GlobalCharacterTracker->Characters;
+		P = &EspRecord::GlobalCharacterTracker->GenericCharacters;
+		P = &EspRecord::GlobalCharacterTracker->InfoToNpcMap;
 	}
 	else
 	{
