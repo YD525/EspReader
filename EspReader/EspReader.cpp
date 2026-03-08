@@ -1,957 +1,1580 @@
-﻿#pragma once
+﻿#include <fstream>
+#include <vector>
+#include <string>
+#include <iostream>
+#include <cstdint>
+#include <stack>
+#include <unordered_map>
+#include <unordered_set>
+#include "miniz.h"
+#include "EspRecord.cpp"         
+#include "CharacterTrackerBuilder.cpp"  
+#include <random>
 
-#include "ESPHeuristicAnalysis.cpp"
+#define NOMINMAX  
+#define WIN32_LEAN_AND_MEAN 
 
-#ifdef _WIN32
 #include <windows.h>
+
+#ifdef SSELexApi_EXPORTS
+#define SSELex_API __declspec(dllexport)
 #else
-#include <sys/stat.h>
-#include <dirent.h>
+#define SSELex_API __declspec(dllimport)
 #endif
-#include "CharacterTracker.h"
 
-extern ESP_HeuristicAnalysis* GlobalTextValidator;
-extern CharacterTracker* GlobalCharacterTrackerInstance;
+ESP_HeuristicAnalysis* GlobalTextValidator = nullptr;
+CharacterTracker* EspRecord::GlobalCharacterTracker = nullptr;
 
-// ===== Record Filter Configuration =====
-class RecordFilter
+extern "C" 
 {
-public:
-	bool AllowAll;
-	RecordFilter() : AllowAll(false) {}
-	void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords)
-	{
-		std::string sig = recordType.substr(0, 4);
-		RecordTypes_.insert(sig);
+	SSELex_API const char* C_GetVersion();
+	SSELex_API int C_GetVersionLength();
 
-		for (size_t i = 0; i < subRecords.size(); ++i)
-		{
-			std::string subSig = subRecords[i].substr(0, 4);
-			SubRecordFilters_[sig].insert(subSig);
-		}
+	SSELex_API void C_Init();
+	SSELex_API void C_InitDefaultFilter();
+	SSELex_API int C_SetDefaultFilter();
+	SSELex_API int C_SetFilter(const char* parentSig, const char** childSigs, int childCount);
+	SSELex_API void C_ClearFilter();
+	SSELex_API int C_ReadEsp(const wchar_t* EspPath);
+    SSELex_API const char* C_GetFieldReport();
+    SSELex_API int C_GetFieldReportLength();
+	SSELex_API EspRecord** C_SearchBySig(const char* ParentSig, const char* ChildSig, int* OutCount);
+	SSELex_API void FreeSearchResults(EspRecord** Arr, int Count);
+
+	SSELex_API int C_GetRecordSig(EspRecord* record, uint8_t* buffer, int bufferSize);
+	SSELex_API uint32_t C_GetRecordFormID(EspRecord* record);
+	SSELex_API const char* C_GetRecordEditorID(EspRecord* record);
+	SSELex_API uint32_t C_GetRecordFlags(EspRecord* record);
+	SSELex_API int C_GetRecordIndex(EspRecord* record);
+
+	SSELex_API int C_GetSubRecordCount(EspRecord* record);
+
+	SSELex_API const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index);
+	SSELex_API int C_SubRecordData_GetOccurrenceIndex(const SubRecordData* subRecord);
+	SSELex_API int C_SubRecordData_GetIndex(const SubRecordData* subRecord);
+	SSELex_API const char* C_SubRecordData_GetSig(const SubRecordData* subRecord);
+	SSELex_API const char* C_SubRecordData_GetString(const SubRecordData* subRecord);
+	SSELex_API bool C_SubRecordData_IsLocalized(const SubRecordData* subRecord);
+	SSELex_API uint32_t C_SubRecordData_GetStringID(const SubRecordData* subRecord);
+	SSELex_API int C_SubRecordData_GetDataSize(const SubRecordData* subRecord);
+	SSELex_API bool C_SubRecordData_GetData(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
+	SSELex_API int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
+	SSELex_API int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize);
+
+	SSELex_API bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
+	SSELex_API bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
+	SSELex_API bool C_SaveEsp(const char* Utf8Path);
+
+	SSELex_API void C_Clear();
+	SSELex_API void C_Close();
+}
+
+static const std::string Version = "1.2.7";
+
+const char* C_GetVersion()
+{
+	return Version.c_str();
+}
+
+int C_GetVersionLength()
+{
+	return static_cast<int>(Version.length());
+}
+
+const char* C_GetFieldReport()
+{
+	if (!GlobalTextValidator)
+	{
+		static const char* errorMsg = "Validator not initialized";
+		return errorMsg;
 	}
 
-	bool ShouldParseRecordWithSub(const std::string& ParentSig, const std::string& ChildSig) const
+	static std::string reportBuffer;
+	reportBuffer = GlobalTextValidator->ExportFieldReport();
+	return reportBuffer.c_str();
+}
+
+int C_GetFieldReportLength()
+{
+	if (!GlobalTextValidator)
 	{
-		if (AllowAll) return true;
-
-		auto it = SubRecordFilters_.find(ParentSig);
-		if (it == SubRecordFilters_.end())
-			return false;
-
-		if (ChildSig.empty())
-			return true;
-
-		const std::unordered_set<std::string>& requiredSubs = it->second;
-
-		if (requiredSubs.empty())
-			return true;
-
-		return requiredSubs.count(ChildSig) > 0;
+		return 0;
 	}
 
-	std::unordered_map<std::string, std::vector<std::string>> CurrentConfig;
-	void LoadFromConfig(const std::unordered_map<std::string, std::vector<std::string>>& Config)
+	static std::string reportBuffer;
+	reportBuffer = GlobalTextValidator->ExportFieldReport();
+	return static_cast<int>(reportBuffer.length());
+}
+
+const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index)
+{
+	if (!record || index < 0 || index >= record->SubRecords.size())
+		return nullptr;
+	return &record->SubRecords[index];
+}
+
+int C_GetRecordSig(EspRecord* record, uint8_t* buffer, int bufferSize)
+{
+	if (!record) return -1;
+
+	int len = static_cast<int>(record->Sig.size());
+
+	if (buffer && bufferSize > len)
 	{
-		CurrentConfig = Config;
-		for (std::unordered_map<std::string, std::vector<std::string>>::const_iterator it = Config.begin();
-			it != Config.end(); ++it)
-		{
-			AddRecordType(it->first, it->second);
-		}
+		std::memcpy(buffer, record->Sig.c_str(), len);
+		buffer[len] = 0;
 	}
 
-	bool IsEnabled() const
+	return len;
+}
+
+int C_SubRecordData_GetStringUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
+{
+	if (!subRecord) return -1;
+
+	std::string str = subRecord->GetString();
+
+	const char* cstr = str.c_str();
+	int len = static_cast<int>(strlen(cstr)); 
+
+	if (buffer && bufferSize > len)
 	{
-		return !RecordTypes_.empty();
+		std::memcpy(buffer, cstr, len + 1); 
 	}
 
-private:
-	std::unordered_set<std::string> RecordTypes_;
-	std::unordered_map<std::string, std::unordered_set<std::string>> SubRecordFilters_;
+	return len;
+}
+
+int C_SubRecordData_GetSigUtf8(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
+{
+	if (!subRecord) return -1;
+
+	int len = static_cast<int>(subRecord->Sig.size());
+
+	if (buffer && bufferSize > len)
+	{
+		std::memcpy(buffer, subRecord->Sig.c_str(), len);
+		buffer[len] = 0;
+	}
+
+	return len;
+}
+
+int C_SubRecordData_GetOccurrenceIndex(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->OccurrenceIndex : -1;
+}
+
+int C_SubRecordData_GetIndex(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->Index : -1;
+}
+
+const char* C_SubRecordData_GetSig(const SubRecordData* subRecord)
+{
+	if (!subRecord) return nullptr;
+	return subRecord->Sig.c_str();
+}
+
+const char* C_SubRecordData_GetString(const SubRecordData* subRecord)
+{
+	if (!subRecord) return nullptr;
+	static std::string buffer;
+	buffer = subRecord->GetString();
+	return buffer.c_str();
+}
+
+bool C_SubRecordData_IsLocalized(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->IsLocalized : false;
+}
+
+uint32_t C_SubRecordData_GetStringID(const SubRecordData* subRecord)
+{
+	return subRecord ? subRecord->StringID : 0;
+}
+
+int C_SubRecordData_GetDataSize(const SubRecordData* subRecord)
+{
+	return subRecord ? static_cast<int>(subRecord->Data.size()) : 0;
+}
+
+bool C_SubRecordData_GetData(const SubRecordData* subRecord, uint8_t* buffer, int bufferSize)
+{
+	if (!subRecord || !buffer) return false;
+
+	const auto& data = subRecord->Data;
+	if (bufferSize < data.size())
+		return false;
+
+	std::memcpy(buffer, data.data(), data.size());
+	return true;
+}
+
+int C_GetRecordIndex(EspRecord* record)
+{
+	if (!record) return 0;
+	return record->Index;
+}
+
+uint32_t C_GetRecordFormID(EspRecord* record)
+{
+	if (!record) return 0;
+	return record->FormID;
+}
+
+const char* C_GetRecordEditorID(EspRecord* record)
+{
+	if (!record) return nullptr;
+
+	static std::string buffer;
+	buffer = record->EditorID;
+	return buffer.c_str();
+}
+
+uint32_t C_GetRecordFlags(EspRecord* record)
+{
+	if (!record) return 0;
+	return record->Flags;
+}
+
+int C_GetSubRecordCount(EspRecord* record)
+{
+	if (!record) return 0;
+	return static_cast<int>(record->SubRecords.size());
+}
+
+
+void Close();
+
+#pragma pack(push, 1)
+struct RecordHeader
+{
+	char     Sig[4];//Offse 0 ~ 3
+	uint32_t DataSize;// 4 ~ 7
+	uint32_t Flags;// 8 ~ 11
+	uint32_t FormID;// 12 ~ 15
+	uint32_t VersionCtrl;// 16 ~ 19
+	uint16_t Version;//20 ~ 21
+	uint16_t Unknown;//22 ~ 23
 };
+#pragma pack(pop)
 
-
-inline std::string Windows1252ToUTF8(const uint8_t* Data, size_t Size)
+#pragma pack(push, 1)
+struct GroupHeader
 {
-	std::string Result;
-	Result.reserve(Size * 2);
+	char     Sig[4];   // "GRUP"
+	uint32_t Size;
+	char     Label[4];
+	uint32_t GroupType;
+	uint32_t Stamp;
+	uint32_t Unknown;
+};
+#pragma pack(pop)
 
-	static const uint16_t CP1252_TABLE[32] =
+#pragma pack(push, 1)
+struct SubRecordHeader
+{
+	char Sig[4];
+	uint16_t Size;
+};
+#pragma pack(pop)
+
+constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
+
+
+// Read helper
+template<typename T>
+inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out), sizeof(T)); }
+inline bool IsGRUP(const char sig[4]) { return std::memcmp(sig, "GRUP", 4) == 0; }
+bool IsCompressed(const RecordHeader& hdr) { return (hdr.Flags & RECORD_FLAG_COMPRESSED) != 0; }
+
+// Decompress
+bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out, size_t uncompressedSize)
+{
+	out.resize(uncompressedSize);
+	size_t ret = tinfl_decompress_mem_to_mem(out.data(), uncompressedSize, src, srcSize, TINFL_FLAG_PARSE_ZLIB_HEADER);
+	return ret == uncompressedSize;
+}
+
+//EnCompress
+bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
+{
+	mz_ulong destLen = compressBound(srcSize);
+	out.resize(destLen);
+	int ret = compress2(out.data(), &destLen, src, srcSize, Z_BEST_COMPRESSION);
+	if (ret != Z_OK) return false;
+	out.resize(destLen);
+	return true;
+}
+
+RecordFilter* TranslateFilter;
+
+// Parse subrecords from memory buffer with filter
+void ParseSubRecords(const uint8_t* data, size_t dataSize, EspRecord& rec,
+	const RecordFilter& filter, const char recordSig[4])
+{
+	size_t offset = 0;
+	while (offset + sizeof(SubRecordHeader) <= dataSize)
 	{
-		0x20AC,0x0081,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,
-		0x02C6,0x2030,0x0160,0x2039,0x0152,0x008D,0x017D,0x008F,
-		0x0090,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,
-		0x02DC,0x2122,0x0161,0x203A,0x0153,0x009D,0x017E,0x0178
-	};
+		const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
+		if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
 
-	for (size_t i = 0; i < Size; ++i)
+		rec.AddSubRecord(sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,*TranslateFilter);
+
+		offset += sizeof(SubRecordHeader) + sub->Size;
+	}
+}
+
+// Parse subrecords from stream with filter
+void ParseSubRecordsStream(std::ifstream& f, uint32_t recordSize, EspRecord& rec,
+	const RecordFilter& filter, const char recordSig[4])
+{
+	uint32_t bytesRead = 0;
+	while (bytesRead < recordSize && f.good())
 	{
-		uint8_t C = Data[i];
-		if (C == 0) break;
-
-		if (C < 0x80)
+		if (bytesRead + sizeof(SubRecordHeader) > recordSize)
 		{
-			Result += static_cast<char>(C);
+			f.seekg(recordSize - bytesRead, std::ios::cur);
+			break;
 		}
-		else if (C >= 0x80 && C <= 0x9F)
+
+		SubRecordHeader sub{};
+		if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
+		bytesRead += sizeof(SubRecordHeader);
+
+		if (bytesRead + sub.Size > recordSize)
 		{
-			uint16_t Unicode = CP1252_TABLE[C - 0x80];
-			if (Unicode < 0x800)
+			f.seekg(recordSize - bytesRead, std::ios::cur);
+			break;
+		}
+
+		std::vector<uint8_t> buf(sub.Size);
+		if (sub.Size > 0)
+		{
+			f.read(reinterpret_cast<char*>(buf.data()), sub.Size);
+			bytesRead += sub.Size;
+		}
+
+		rec.AddSubRecord(sub.Sig, buf.data(), sub.Size,*TranslateFilter);
+	}
+}
+
+void ParseRecord(std::ifstream& f, const char Sig[4], EspData& doc, const RecordFilter& filter)
+{
+	RecordHeader hdr{};
+	std::memcpy(hdr.Sig, Sig, 4);
+	Read(f, hdr.DataSize);
+	Read(f, hdr.Flags);
+	Read(f, hdr.FormID);
+	Read(f, hdr.VersionCtrl);
+	Read(f, hdr.Version);
+	Read(f, hdr.Unknown);
+
+	EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
+
+	if (IsCompressed(hdr))
+	{
+		if (hdr.DataSize < 4)
+		{
+			f.seekg(hdr.DataSize, std::ios::cur);
+			doc.AddRecord(rec,*TranslateFilter);
+			return;
+		}
+
+		uint32_t uncompressedSize = 0;
+		Read(f, uncompressedSize);
+
+		uint32_t compressedSize = hdr.DataSize - 4;
+		std::vector<uint8_t> compressed(compressedSize);
+		f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
+
+		std::vector<uint8_t> decompressed;
+		if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
+		{
+			ParseSubRecords(decompressed.data(), decompressed.size(), rec, filter, hdr.Sig);
+		}
+	}
+	else
+	{
+		ParseSubRecordsStream(f, hdr.DataSize, rec, filter, hdr.Sig);
+	}
+
+	doc.AddRecord(rec, *TranslateFilter);
+}
+
+void ParseCellGroup(std::ifstream& f, EspData& doc, const RecordFilter& filter, uint32_t groupSize)
+{
+	uint32_t bytesRead = 0;
+
+	while (bytesRead < groupSize && f.good())
+	{
+		if (groupSize - bytesRead < 4)
+		{
+			f.seekg(groupSize - bytesRead, std::ios::cur);
+			break;
+		}
+
+		char sig[4];
+		std::streampos posBeforeRead = f.tellg();
+		if (!f.read(sig, 4))
+		{
+			break;
+		}
+		bytesRead += 4;
+
+		if (IsGRUP(sig))
+		{
+			if (groupSize - bytesRead < 20)
 			{
-				Result += static_cast<char>(0xC0 | (Unicode >> 6));
-				Result += static_cast<char>(0x80 | (Unicode & 0x3F));
+				f.seekg(groupSize - bytesRead, std::ios::cur);
+				break;
 			}
-			else
+
+			GroupHeader gh{};
+			std::memcpy(gh.Sig, sig, 4);
+			Read(f, gh.Size);           // +4 bytes
+			f.read(gh.Label, 4);        // +4 bytes
+			Read(f, gh.GroupType);      // +4 bytes
+			Read(f, gh.Stamp);          // +4 bytes
+			Read(f, gh.Unknown);        // +4 bytes
+			bytesRead += 20;            // Total: 24 bytes for full GRUP header
+
+			if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24))
 			{
-				Result += static_cast<char>(0xE0 | (Unicode >> 12));
-				Result += static_cast<char>(0x80 | ((Unicode >> 6) & 0x3F));
-				Result += static_cast<char>(0x80 | (Unicode & 0x3F));
+				f.seekg(groupSize - bytesRead, std::ios::cur);
+				break;
 			}
+
+			doc.IncrementGrupCount();
+
+			// CELL GRUP
+			// GroupType:
+			// 0 = Top (World Children)
+			// 1 = World Children
+			// 2 = Interior Cell Block
+			// 3 = Interior Cell Sub-Block
+			// 4 = Exterior Cell Block
+			// 5 = Exterior Cell Sub-Block
+			// 6 = Cell Children (Persistent)
+			// 7 = Cell Children (Temporary)
+			// 8 = Cell Children (VWD)
+			// 9 = Cell Children
+
+			uint32_t contentSize = gh.Size - 24;
+			ParseCellGroup(f, doc, filter, contentSize);
+			bytesRead += contentSize;
 		}
 		else
 		{
-			Result += static_cast<char>(0xC0 | (C >> 6));
-			Result += static_cast<char>(0x80 | (C & 0x3F));
+			if (groupSize - bytesRead < 20)
+			{
+				f.seekg(groupSize - bytesRead, std::ios::cur);
+				break;
+			}
+
+			RecordHeader hdr{};
+			std::memcpy(hdr.Sig, sig, 4);
+			Read(f, hdr.DataSize);
+			Read(f, hdr.Flags);
+			Read(f, hdr.FormID);
+			Read(f, hdr.VersionCtrl);
+			Read(f, hdr.Version);
+			Read(f, hdr.Unknown);
+			bytesRead += 20;
+
+			uint32_t recordTotalSize = hdr.DataSize;
+
+			if (recordTotalSize > (groupSize - bytesRead))
+			{
+				f.seekg(groupSize - bytesRead, std::ios::cur);
+				break;
+			}
+
+			EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
+
+			if (IsCompressed(hdr))
+			{
+				if (hdr.DataSize < 4)
+				{
+					f.seekg(hdr.DataSize, std::ios::cur);
+				}
+				else
+				{
+					uint32_t uncompressedSize = 0;
+					Read(f, uncompressedSize);
+
+					uint32_t compressedSize = hdr.DataSize - 4;
+					std::vector<uint8_t> compressed(compressedSize);
+					f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
+
+					std::vector<uint8_t> decompressed;
+					if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
+					{
+						ParseSubRecords(decompressed.data(), decompressed.size(), Record, filter, hdr.Sig);
+					}
+				}
+			}
+			else
+			{
+				ParseSubRecordsStream(f, hdr.DataSize, Record, filter, hdr.Sig);
+			}
+
+			if (Record.CheckSub())
+			{
+				doc.AddRecord(Record,*TranslateFilter);
+			}
+
+			bytesRead += recordTotalSize;
 		}
+
+		std::streampos posAfterRead = f.tellg();
+		int64_t actualConsumed = static_cast<int64_t>(posAfterRead - posBeforeRead);
+
+		if (actualConsumed > 0)
+		{
+			bytesRead = static_cast<uint32_t>(posAfterRead - posBeforeRead + (bytesRead - actualConsumed));
+		}
+	}
+
+	if (bytesRead < groupSize)
+	{
+		f.seekg(groupSize - bytesRead, std::ios::cur);
+	}
+}
+
+// Iterative group parsing with filter
+void ParseGroupIterative(std::ifstream& f, EspData& doc, const RecordFilter& filter)
+{
+	struct GroupState
+	{
+		uint32_t remaining;
+	};
+	std::stack<GroupState> groupStack;
+
+	GroupHeader gh{};
+	std::memcpy(gh.Sig, "GRUP", 4);
+	Read(f, gh.Size);
+	f.read(gh.Label, 4);
+	Read(f, gh.GroupType);
+	Read(f, gh.Stamp);
+	Read(f, gh.Unknown);
+
+	if (gh.Size < 24) return;
+
+	std::string label(gh.Label, 4);
+	std::cout << "Top-level GRUP: Label='" << label
+		<< "' Type=" << gh.GroupType
+		<< " Size=" << gh.Size << "\n";
+
+	doc.IncrementGrupCount();
+
+	if (std::memcmp(gh.Label, "CELL", 4) == 0)
+	{
+		std::cout << "  -> Entering CELL group parser\n";
+		ParseCellGroup(f, doc, filter, gh.Size - 24);
+		return;
+	}
+
+	groupStack.push({ gh.Size - 24 });
+
+	while (!groupStack.empty())
+	{
+		auto& state = groupStack.top();
+
+		if (state.remaining == 0)
+		{
+			groupStack.pop();
+			continue;
+		}
+
+		if (state.remaining < 4)
+		{
+			f.seekg(state.remaining, std::ios::cur);
+			groupStack.pop();
+			continue;
+		}
+
+		char sig[4];
+		if (!f.read(sig, 4))
+		{
+			groupStack.pop();
+			continue;
+		}
+
+		if (IsGRUP(sig))
+		{
+			if (state.remaining < 24)
+			{
+				f.seekg(state.remaining - 4, std::ios::cur);
+				groupStack.pop();
+				continue;
+			}
+
+			Read(f, gh.Size);
+			f.read(gh.Label, 4);
+			Read(f, gh.GroupType);
+			Read(f, gh.Stamp);
+			Read(f, gh.Unknown);
+
+			if (gh.Size < 24 || gh.Size > state.remaining)
+			{
+				groupStack.pop();
+				continue;
+			}
+
+			if (std::memcmp(gh.Label, "CELL", 4) == 0)
+			{
+				std::cout << "    -> Nested CELL group, using ParseCellGroup\n";
+				ParseCellGroup(f, doc, filter, gh.Size - 24);
+				state.remaining -= gh.Size;
+				continue;
+			}
+
+			doc.IncrementGrupCount();
+			state.remaining -= gh.Size;
+			groupStack.push({ gh.Size - 24 });
+		}
+		else
+		{
+			if (state.remaining < 24)
+			{
+				f.seekg(state.remaining - 4, std::ios::cur);
+				groupStack.pop();
+				continue;
+			}
+
+			RecordHeader hdr{};
+			std::memcpy(hdr.Sig, sig, 4);
+			Read(f, hdr.DataSize);
+			Read(f, hdr.Flags);
+			Read(f, hdr.FormID);
+			Read(f, hdr.VersionCtrl);
+			Read(f, hdr.Version);
+			Read(f, hdr.Unknown);
+
+			uint32_t recordTotalSize = 24 + hdr.DataSize;
+
+			if (recordTotalSize > state.remaining)
+			{
+				groupStack.pop();
+				continue;
+			}
+
+			EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
+
+			if (IsCompressed(hdr))
+			{
+				if (hdr.DataSize < 4)
+				{
+					f.seekg(hdr.DataSize, std::ios::cur);
+				}
+				else
+				{
+					uint32_t uncompressedSize = 0;
+					Read(f, uncompressedSize);
+
+					uint32_t compressedSize = hdr.DataSize - 4;
+					std::vector<uint8_t> compressed(compressedSize);
+					f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
+
+					std::vector<uint8_t> decompressed;
+					if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
+					{
+						ParseSubRecords(decompressed.data(), decompressed.size(), Record, filter, hdr.Sig);
+					}
+				}
+			}
+			else
+			{
+				ParseSubRecordsStream(f, hdr.DataSize, Record, filter, hdr.Sig);
+			}
+
+			if (Record.CheckSub())
+			{
+				doc.AddRecord(Record,*TranslateFilter);
+			}
+
+			state.remaining -= recordTotalSize;
+		}
+	}
+}
+
+std::wstring LastSetPath;
+EspData* Data;
+void Clear();
+
+int ReadEsp(const wchar_t* EspPath, const RecordFilter& Filter)
+{
+	if (GlobalTextValidator)
+	{
+		delete GlobalTextValidator;
+		GlobalTextValidator = nullptr;
+	}
+
+	GlobalTextValidator = new ESP_HeuristicAnalysis();
+	delete EspRecord::GlobalCharacterTracker;
+	EspRecord::GlobalCharacterTracker = new CharacterTracker();
+
+	Clear();
+	LastSetPath = EspPath;
+	Data = new EspData();
+
+	std::ifstream F(EspPath, std::ios::binary);
+	if (!F.is_open())
+	{
+		std::cerr << "Failed to open ESP: " << EspPath << "\n";
+		return 1;
+	}
+
+	while (F.good() && F.peek() != EOF)
+	{
+		char Sig[4];
+		if (!F.read(Sig, 4)) break;
+
+		if (IsGRUP(Sig))
+		{
+			ParseGroupIterative(F, *Data, Filter);
+		}
+		else
+		{
+			ParseRecord(F, Sig, *Data, Filter);
+		}
+	}
+
+	CharacterTrackerBuilder::Build(*Data, *EspRecord::GlobalCharacterTracker);
+
+	return 0;
+}
+
+int C_ReadEsp(const wchar_t* EspPath)
+{
+	return ReadEsp(EspPath, *TranslateFilter);
+}
+
+void C_InitDefaultFilter()
+{
+	if (TranslateFilter) delete TranslateFilter;
+	TranslateFilter = new RecordFilter();
+}
+
+void C_ClearFilter()
+{
+	if (TranslateFilter)
+	{
+		TranslateFilter->CurrentConfig.clear();
+	}
+}
+
+static std::string WStringToUtf8(const std::wstring& wstr)
+{
+	if (wstr.empty()) return std::string();
+	int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), NULL, 0, NULL, NULL);
+	std::string result(size_needed, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), &result[0], size_needed, NULL, NULL);
+	return result;
+}
+
+int C_SetDefaultFilter()
+{
+	if (TranslateFilter)
+	{
+		std::unordered_map<std::string, std::vector<std::string>> Config =
+		{
+		   {"ACTI", {"FULL", "RNAM"}},
+		   {"ALCH", {"FULL"}},
+		   {"AMMO", {"FULL", "DESC"}},
+		   {"APPA", {"FULL", "DESC"}},
+		   {"ARMO", {"FULL", "DESC"}},
+		   {"AVIF", {"FULL", "DESC"}},
+		   {"BOOK", {"FULL", "DESC", "CNAM"}},
+		   {"CLAS", {"FULL"}},
+		   {"CELL", {"FULL"}},
+		   {"CONT", {"FULL"}},
+		   {"DIAL", {"FULL"}},
+		   {"DOOR", {"FULL"}},
+		   {"ENCH", {"FULL"}},
+		   {"EXPL", {"FULL"}},
+		   {"FLOR", {"FULL", "RNAM"}},
+		   {"FURN", {"FULL"}},
+		   {"HAZD", {"FULL"}},
+		   {"INFO", {"NAM1", "RNAM"}},
+		   {"INGR", {"FULL"}},
+		   {"KEYM", {"FULL"}},
+		   {"LCTN", {"FULL"}},
+		   {"LIGH", {"FULL"}},
+		   {"LSCR", {"DESC"}},
+		   {"MESG", {"DESC", "FULL", "ITXT"}},
+		   {"MGEF", {"FULL", "DNAM"}},
+		   {"MISC", {"FULL"}},
+		   {"NPC_", {"FULL", "SHRT"}},
+		   {"NOTE", {"FULL", "TNAM"}},
+		   {"PERK", {"FULL", "DESC", "EPF2", "EPFD"}},
+		   {"PROJ", {"FULL"}},
+		   {"QUST", {"FULL", "CNAM", "NNAM"}},
+		   {"RACE", {"FULL", "DESC"}},
+		   {"REFR", {"FULL"}},
+		   {"REGN", {"RDMP"}},
+		   {"SCRL", {"FULL", "DESC"}},
+		   {"SHOU", {"FULL", "DESC"}},
+		   {"SLGM", {"FULL"}},
+		   {"SPEL", {"FULL", "DESC"}},
+		   {"TACT", {"FULL"}},
+		   {"TREE", {"FULL"}},
+		   {"WEAP", {"DESC", "FULL"}},
+		   {"WOOP", {"FULL", "TNAM"}},
+		   {"WRLD", {"FULL"}},
+		};
+
+		TranslateFilter->LoadFromConfig(Config);
+
+		return (int)TranslateFilter->CurrentConfig.size();
+	}
+	
+	return -1;
+}
+
+ int C_SetFilter(const char* ParentSig,const char** ChildSigs,int ChildCount)
+{
+	 if (TranslateFilter)
+	 {
+		 std::string Parent(ParentSig);
+
+		 std::vector<std::string>& Vec = TranslateFilter->CurrentConfig[Parent];
+
+		 for (int i = 0; i < ChildCount; ++i)
+		 {
+			 Vec.push_back(std::string(ChildSigs[i]));
+		 }
+
+		 return Vec.size();
+	 }
+	 return -1;
+}
+
+
+void Init()
+{
+	if (!GlobalTextValidator)
+	{
+		GlobalTextValidator = new ESP_HeuristicAnalysis();
+	}
+}
+
+void WaitForExit()
+{
+	std::cin.ignore(10000, '\n');
+}
+
+
+void GetCanTransCount()
+{
+	int GetTotal = Data->GetRecordsSubCount() + Data->GetCellRecordsSubCount();
+	std::cout << "CanTransCount: " << GetTotal << "\n\n";
+}
+
+
+BOOL APIENTRY DllMain(HMODULE hModule,
+	DWORD  ul_reason_for_call,
+	LPVOID lpReserved)
+{
+	switch (ul_reason_for_call)
+	{
+	case DLL_PROCESS_ATTACH:
+		break;
+	case DLL_THREAD_ATTACH:
+		break;
+	case DLL_THREAD_DETACH:
+		break;
+	case DLL_PROCESS_DETACH:
+		break;
+	}
+	return TRUE;
+}
+
+void C_Init()
+{
+	Init();
+}
+
+void C_Close()
+{
+	if (GlobalTextValidator)
+	{
+		delete GlobalTextValidator;
+		GlobalTextValidator = nullptr;
+	}
+
+	Close();
+}
+
+EspRecord** C_SearchBySig(const char* ParentSig,const char* ChildSig,int* OutCount)
+{
+	std::vector<EspRecord> Matches = Data->SearchBySig(ParentSig, ChildSig);
+	*OutCount = static_cast<int>(Matches.size());
+
+	if (Matches.empty())
+		return nullptr;
+
+	EspRecord** Result = new EspRecord * [*OutCount];
+	for (int i = 0; i < *OutCount; ++i)
+	{
+		Result[i] = new EspRecord(Matches[i]);
 	}
 
 	return Result;
 }
 
-inline bool IsLikelyUTF8(const uint8_t* Data, size_t Size)
+void FreeSearchResults(EspRecord** Arr, int Count)
 {
-	for (size_t i = 0; i < Size && Data[i] != 0; ++i)
+	if (!Arr) return;
+
+	for (int i = 0; i < Count; ++i)
 	{
-		uint8_t C = Data[i];
-		if (C >= 0x80)
-		{
-			if ((C & 0xE0) == 0xC0)
-			{
-				if (i + 1 >= Size || (Data[i + 1] & 0xC0) != 0x80) return false;
-				i++;
-			}
-			else if ((C & 0xF0) == 0xE0)
-			{
-				if (i + 2 >= Size || (Data[i + 1] & 0xC0) != 0x80 || (Data[i + 2] & 0xC0) != 0x80) return false;
-				i += 2;
-			}
-			else if ((C & 0xF8) == 0xF0)
-			{
-				if (i + 3 >= Size || (Data[i + 1] & 0xC0) != 0x80 || (Data[i + 2] & 0xC0) != 0x80 || (Data[i + 3] & 0xC0) != 0x80) return false;
-				i += 3;
-			}
-			else
-			{
-				return false;
-			}
-		}
+		delete Arr[i];  
 	}
+
+	delete[] Arr; 
+}
+
+int main()
+{
+	//SetConsoleOutputCP(CP_UTF8);
+
+	Init();
+
+	C_InitDefaultFilter();
+	C_SetDefaultFilter();
+
+	const wchar_t* EspPath = TEXT("C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp");
+
+	std::cout << "Starting ESP parsing with filter...\n";
+	if (TranslateFilter->IsEnabled())
+	{
+		std::cout << "Filter is enabled - only specified records will be parsed.\n";
+	}
+	else {
+		std::cout << "Filter is disabled - all records will be parsed.\n";
+	}
+
+	int state = ReadEsp(EspPath, *TranslateFilter);
+
+	if (state == 0)
+	{
+		std::cout << "Finished reading ESP.\n";
+		std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
+
+		// Print statistics
+		Data->PrintStatistics();
+
+		//Test Query Cells
+		std::cout << "CellCount: " << Data->SearchBySig("CELL").size() << "\n\n";
+
+		GetCanTransCount();
+	}
+	else
+	{
+		std::cerr << "Failed to read ESP\n";
+	}
+
+	Close();
+
+	WaitForExit();
+
+	return 0;
+}
+
+//Quick Modify Data
+//vector The pointer will be reallocated... damn it.
+bool ModifySubRecordByOffset(int IsCell,int RecordOffset,int SubOffset,const char* NewUtf8Data)
+{
+	if (!Data)
+		return false;
+
+	std::vector<EspRecord>& Records =
+		(IsCell == 1) ? Data->CellRecords : Data->Records;
+
+	if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
+		return false;
+
+	EspRecord& Rec = Records[RecordOffset];
+
+	if (SubOffset < 0 || SubOffset >= (int)Rec.SubRecords.size())
+		return false;
+
+	SubRecordData& Sub = Rec.SubRecords[SubOffset];
+
+	if (NewUtf8Data)
+	{
+		int len = std::strlen(NewUtf8Data);
+
+		Sub.Data.resize(len + 1);
+
+		std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+
+		Sub.Data[len] = '\0';
+
+		Sub.IsModify = true;
+	}
+
+	Sub.StringID = 0;
+	Sub.IsLocalized = false;
+
 	return true;
 }
-//https://github.com/Cutleast/sse-plugin-interface/blob/master/src%2Fsse_plugin_interface%2Fdatatypes.py#L209-L233
-class RawString
+
+
+bool C_ModifySubRecordByOffset(int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
 {
-public:
-	enum StrType
-	{
-		Char,
-		WChar,
-		BZString,
-		BString,
-		WString,
-		WZString,
-		ZString,
-		String,
-		List
-	};
+	return ModifySubRecordByOffset(IsCell, RecordOffset, SubOffset, NewUtf8Data);
+}
 
-	std::string Data;
-	std::string Encoding;
+bool C_ModifySubRecord(uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int Index, const char* NewUtf8Data)
+{
+	std::string StrRecordSig = RecordSig ? RecordSig : "";
+	std::string StrSubSig = SubSig ? SubSig : "";
 
-	RawString() {}
-	RawString(const std::string& Str, const std::string& Enc = "utf8")
-		: Data(Str), Encoding(Enc)
+	for (auto& Rec : Data->Records)
 	{
-	}
-
-	static RawString Parse(const uint8_t* Bytes, size_t Size, StrType Type)
-	{
-		switch (Type)
+		if (Rec.FormID == FormID && Rec.Sig == StrRecordSig)
 		{
-		case Char:
-		{
-			return RawString(std::string(reinterpret_cast<const char*>(Bytes), 1));
-		}
-		case WChar:
-		case WString:
-		case WZString:
-		{
-			if (Size < 2) return RawString("");
-			std::string Utf8;
-			for (size_t i = 0; i + 1 < Size; i += 2)
+			for (auto& Sub : Rec.SubRecords)
 			{
-				uint16_t WC;
-				std::memcpy(&WC, Bytes + i, 2);
-				if (WC == 0) break;
-				if (WC < 0x80)
+				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
 				{
-					Utf8 += static_cast<char>(WC);
-				}
-				else
-				{
-					if (WC < 0x800)
+					if (NewUtf8Data)
 					{
-						Utf8 += static_cast<char>(0xC0 | (WC >> 6));
-						Utf8 += static_cast<char>(0x80 | (WC & 0x3F));
+						int len = std::strlen(NewUtf8Data);
+
+						Sub.Data.resize(len + 1);
+
+						std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+
+						Sub.Data[len] = '\0';
+
+						Sub.IsModify = true;
 					}
-					else
-					{
-						Utf8 += static_cast<char>(0xE0 | (WC >> 12));
-						Utf8 += static_cast<char>(0x80 | ((WC >> 6) & 0x3F));
-						Utf8 += static_cast<char>(0x80 | (WC & 0x3F));
-					}
+
+					Sub.StringID = 0;//If you modify the text directly, it will no longer be supported by stringsfile.
+					Sub.IsLocalized = false;
+					
+					return true;
 				}
 			}
-			return RawString(Utf8);
 		}
-		case BString:
-		case BZString:
-		case ZString:
-		case String:
-		default:
+	}
+
+	for (auto& Rec : Data->CellRecords)
+	{
+		if (Rec.FormID == FormID && Rec.Sig == StrRecordSig)
 		{
-			size_t ActualSize = 0;
-			for (size_t i = 0; i < Size; ++i)
+			for (auto& Sub : Rec.SubRecords)
 			{
-				if (Bytes[i] == 0)
+				if (Sub.Sig == StrSubSig && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
 				{
-					ActualSize = i;
-					break;
+					if (NewUtf8Data)
+					{
+						int len = std::strlen(NewUtf8Data);
+
+						Sub.Data.resize(len + 1);
+
+						std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+
+						Sub.Data[len] = '\0';
+
+						Sub.IsModify = true;
+					}
+
+					Sub.StringID = 0;
+					Sub.IsLocalized = false;
+					return true;
 				}
 			}
+		}
+	}
 
-			if (ActualSize == 0)
-				ActualSize = Size;
+	return false;
+}
 
-			if (IsLikelyUTF8(Bytes, ActualSize))
+bool SaveEsp(const char* SavePath);
+
+bool C_SaveEsp(const char* Utf8Path)
+{
+	if (!Utf8Path) return false;
+
+	return SaveEsp(Utf8Path);
+}
+
+const EspRecord* GetRecord(char* Key)
+{
+	if (!Key)
+		return {};
+
+	std::string UniqueKey(Key);
+
+	auto Item = Data->FindByUniqueKey(UniqueKey);
+
+	return Item;
+}
+
+void Clear()
+{
+	delete Data;
+	Data = nullptr;
+
+	LastSetPath = TEXT("");
+}
+
+void C_Clear()
+{
+	Clear();
+}
+
+void Close()
+{
+	delete TranslateFilter;
+	TranslateFilter = nullptr;
+
+	Clear();
+}
+
+#pragma region SaveFunc
+
+bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4], const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex);
+bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize, const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex);
+
+static inline uint64_t MakeRecordKey(uint32_t FormID, const char Sig[4])
+{
+	uint32_t SigInt = 0;
+	std::memcpy(&SigInt, Sig, 4);
+	return (static_cast<uint64_t>(FormID) << 32) | static_cast<uint64_t>(SigInt);
+}
+
+static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig)
+{
+	return MakeRecordKey(FormID, Sig.c_str());
+}
+
+std::unordered_map<uint64_t, const EspRecord*> BuildModifiedIndex()
+{
+	std::unordered_map<uint64_t, const EspRecord*> index;
+
+	auto scanRecords = [&](const std::vector<EspRecord>& records)
+		{
+			for (const auto& rec : records)
 			{
-				return RawString(std::string(reinterpret_cast<const char*>(Bytes), ActualSize));
+				for (const auto& sub : rec.SubRecords)
+				{
+					if (sub.IsModify)
+					{
+						index[MakeRecordKey(rec.FormID, rec.Sig)] = &rec;
+						break;
+					}
+				}
 			}
-			else
-			{
-				return RawString(Windows1252ToUTF8(Bytes, ActualSize));
-			}
-		}
-		}
-	}
+		};
 
-	static RawString FromBytes(const std::vector<uint8_t>& Bytes, StrType Type = String)
-	{
-		return Parse(Bytes.data(), Bytes.size(), Type);
-	}
+	scanRecords(Data->Records);
+	scanRecords(Data->CellRecords);
 
-	std::string ToUTF8String() const { return Data; }
+	return index;
+}
 
-	std::vector<uint8_t> Dump(StrType Type) const
-	{
-		switch (Type)
-		{
-		case Char:
-		case String:
-		{
-			return std::vector<uint8_t>(Data.begin(), Data.end());
-		}
-		case BZString:
-		{
-			std::vector<uint8_t> Result;
-			Result.push_back(static_cast<uint8_t>(Data.size()));
-			Result.insert(Result.end(), Data.begin(), Data.end());
-			Result.push_back(0);
-			return Result;
-		}
-		default:
-		{
-			throw std::runtime_error("Dump not implemented for this type");
-		}
-		}
-	}
-};
-
-struct SubRecordData
+struct OriginalSubRecord
 {
 	std::string Sig;
-	std::vector<uint8_t> Data;
-	bool IsLocalized;
-	uint32_t StringID;
 	int OccurrenceIndex;
-	int Index;
-	bool IsModify;
-
-	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), Index(0), IsModify(false) {}
-
-	std::string GetString() const
-	{
-		if (Data.empty()) return "";
-
-		if (IsLocalized)
-		{
-			return "<StringID:" + std::to_string(StringID) + ">";
-		}
-
-		return RawString::FromBytes(Data).ToUTF8String();
-	}
-
-	std::string GetRawString() const
-	{
-		if (Data.empty()) return "";
-		return RawString::FromBytes(Data).ToUTF8String();
-	}
+	size_t OffsetInData;
+	uint16_t Size;
 };
 
-class EspRecord
+std::vector<OriginalSubRecord> ParseOriginalSubRecords(const uint8_t* data, size_t dataSize)
 {
-public:
-	std::string Sig;
-	uint32_t FormID;
-	uint32_t Flags;
-	std::vector<SubRecordData> SubRecords;
-	std::unordered_map<std::string, int> TotalOccurrenceCount;
-	uint8_t LastEPFT;
-	bool HasEPFT;
-	int Index;
-	std::string EditorID;
+	std::vector<OriginalSubRecord> result;
+	std::unordered_map<std::string, int> occurrenceMap;
 
-	static CharacterTracker* GlobalCharacterTracker;
-	uint32_t        PendingVTCK = 0;
-	bool            HasPendingVTCK = false;
-	uint32_t        PendingANAM = 0;
-	bool            HasPendingANAM = false;
-	CharacterGender PendingGenderFromACBS = CharacterGender::Unknown;
-	bool            HasPendingACBS = false;
-
-	EspRecord(const char* S, uint32_t FID, uint32_t FL)
-		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0), EditorID("")
+	size_t offset = 0;
+	while (offset + sizeof(SubRecordHeader) <= dataSize)
 	{
+		const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
+		if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
+
+		OriginalSubRecord osr;
+		osr.Sig = std::string(sub->Sig, 4);
+		osr.OccurrenceIndex = occurrenceMap[osr.Sig]++;
+		osr.OffsetInData = offset;
+		osr.Size = sub->Size;
+
+		result.push_back(osr);
+		offset += sizeof(SubRecordHeader) + sub->Size;
 	}
 
-	EspRecord(const EspRecord& other)
-		: Sig(other.Sig)
-		, FormID(other.FormID)
-		, Flags(other.Flags)
-		, SubRecords(other.SubRecords)
-		, TotalOccurrenceCount(other.TotalOccurrenceCount)
-		, LastEPFT(other.LastEPFT)
-		, HasEPFT(other.HasEPFT)
-		, Index(other.Index)
-		, EditorID(other.EditorID)
-	{
+	return result;
+}
 
-	}
+const SubRecordData* FindModifiedSubRecord(
+	const std::unordered_map<uint64_t, const EspRecord*>& index,
+	const std::string& ParentSig,
+	uint32_t FormID,
+	const std::string& ChildSig,
+	int OccurrenceIndex)
+{
+	auto it = index.find(MakeRecordKey(FormID, ParentSig));
+	if (it == index.end())
+		return nullptr;
 
-	EspRecord& operator=(const EspRecord& other)
+	const EspRecord* rec = it->second;
+
+	for (const auto& sub : rec->SubRecords)
 	{
-		if (this != &other)
+		if (sub.Sig == ChildSig &&
+			sub.OccurrenceIndex == OccurrenceIndex &&
+			sub.IsModify)
 		{
-			Sig = other.Sig;
-			FormID = other.FormID;
-			Flags = other.Flags;
-			SubRecords = other.SubRecords;
-			TotalOccurrenceCount = other.TotalOccurrenceCount;
-			LastEPFT = other.LastEPFT;
-			HasEPFT = other.HasEPFT;
-			Index = other.Index;
-			EditorID = other.EditorID;
+			return &sub;
 		}
-		return *this;
 	}
 
-	bool CheckSub() const
+	return nullptr;
+}
+
+std::vector<uint8_t> ModifySubRecordsWithFilter(
+	const uint8_t* originalData,
+	size_t dataSize,
+	const std::string& parentSig,
+	uint32_t formID,
+	const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
+{
+	std::vector<uint8_t> result;
+
+	auto originalSubs = ParseOriginalSubRecords(originalData, dataSize);
+
+	for (const auto& osr : originalSubs)
 	{
-		for (size_t i = 0; i < SubRecords.size(); ++i)
+		const SubRecordData* modified = FindModifiedSubRecord(
+			modifiedIndex,
+			parentSig,
+			formID,
+			osr.Sig,
+			osr.OccurrenceIndex);
+
+		if (modified)
 		{
-			const SubRecordData& Sub = SubRecords[i];
-			if (!Sub.Data.empty())
+			if (modified->Data.size() > 0xFFFF)
 			{
-				std::string Text = Sub.GetString();
+				std::cerr
+					<< "Error: SubRecord " << osr.Sig
+					<< " in " << parentSig
+					<< " FormID 0x" << std::hex << formID << std::dec
+					<< " exceeds 65535 bytes, keeping original data\n";
 
-				if (!Text.empty())
-				{
-					if (HasVisibleText(Text))
-					{
-						return true;
-					}
-				}
+				result.insert(result.end(),
+					originalData + osr.OffsetInData,
+					originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
+
+				continue;
 			}
-		}
-		return false;
-	}
 
-	bool CanTranslateSub(const EspRecord& Parent, const SubRecordData& Item)
-	{
-		if (Item.Data.empty())
-			return false;
+			SubRecordHeader newHeader;
+			std::memcpy(newHeader.Sig, osr.Sig.c_str(), 4);
+			newHeader.Size = static_cast<uint16_t>(modified->Data.size());
 
-		if (GlobalTextValidator)
-		{
-			bool IsValid = GlobalTextValidator->IsValidTranslatableText(
-				Parent.Sig,
-				Item.Sig,
-				Item.Data.data(),
-				Item.Data.size(),
-				Parent.LastEPFT
-			);
+			result.insert(result.end(),
+				reinterpret_cast<uint8_t*>(&newHeader),
+				reinterpret_cast<uint8_t*>(&newHeader) + sizeof(newHeader));
 
-			return IsValid;
+			result.insert(result.end(),
+				modified->Data.begin(),
+				modified->Data.end());
 		}
 		else
 		{
-			return false;
+			result.insert(result.end(),
+				originalData + osr.OffsetInData,
+				originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
 		}
 	}
 
-	bool IsProbablyStringID(const uint8_t* data, size_t size)
+	return result;
+}
+
+
+bool ProcessRecord(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
+	const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
+{
+	RecordHeader HDR{};
+	std::memcpy(HDR.Sig, Sig, 4);
+
+	Read(Fin, HDR.DataSize);
+	Read(Fin, HDR.Flags);
+	Read(Fin, HDR.FormID);
+	Read(Fin, HDR.VersionCtrl);
+	Read(Fin, HDR.Version);
+	Read(Fin, HDR.Unknown);
+
+	std::vector<uint8_t> OriginalData(HDR.DataSize);
+	Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+
+	if (modifiedIndex.find(MakeRecordKey(HDR.FormID, Sig)) == modifiedIndex.end())
 	{
-		if (size < 4) return false;
-
-		uint32_t id;
-		std::memcpy(&id, data, 4);
-
-		if (id > 0x000FFFFF) return false;
-
-		if (id == 0) return false;
-
-		if (id < 0x3E8) return false;
-
-		bool AllPrintable = true;
-		for (int i = 0; i < 4; ++i)
-		{
-			if (!isprint(data[i]))
-			{
-				AllPrintable = false;
-				break;
-			}
-		}
-
-		return !AllPrintable;
-	}
-
-	inline bool IsProbablyString(const uint8_t* data, size_t size)
-	{
-		if (!data || size == 0)
-			return false;
-
-		if (size == 1)
-		{
-			uint8_t c = data[0];
-			return (c >= 0x20 && c <= 0x7E);
-		}
-
-		size_t zeroCount = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (data[i] == 0)
-				zeroCount++;
-		}
-
-		if (zeroCount > size / 4)
-			return false;
-
-		size_t printable = 0;
-		size_t scanned = 0;
-
-		for (size_t i = 0; i < size && data[i] != 0; ++i)
-		{
-			uint8_t c = data[i];
-			scanned++;
-
-			if (c >= 0x20 && c <= 0x7E)
-				printable++;
-			else if (c == '\n' || c == '\r' || c == '\t')
-				printable++;
-			else if (c >= 0x80)
-				printable++;
-		}
-
-		if (printable == 0)
-			return false;
-
-		if (printable * 2 < scanned)
-			return false;
-
-		std::string temp;
-		for (size_t i = 0; i < size && data[i] != 0; ++i)
-			temp.push_back(static_cast<char>(data[i]));
-
-		auto IsHexChar = [](char c)
-			{
-				return std::isdigit((unsigned char)c) ||
-					(c >= 'a' && c <= 'f') ||
-					(c >= 'A' && c <= 'F');
-			};
-
-		size_t hexLike = 0;
-		for (char c : temp)
-		{
-			if (IsHexChar(c) || c == '-')
-				hexLike++;
-		}
-
-		if (!temp.empty() && hexLike == temp.size())
-			return false;
-
+		Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
+		Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
 		return true;
 	}
 
+	std::vector<uint8_t> WorkingData;
+	bool WasCompressed = IsCompressed(HDR);
 
-	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
+	if (WasCompressed)
 	{
-		SubRecordData Sub;
-		Sub.Sig = std::string(Str, 4);
-
-		int CurrentOccurrence = TotalOccurrenceCount[Sub.Sig];
-		TotalOccurrenceCount[Sub.Sig]++;
-
-		Sub.OccurrenceIndex = CurrentOccurrence;
-		Sub.Index = static_cast<int>(SubRecords.size());
-
-		//===== PERK Special Handling: Recording EPFT Value =====
-		if (Sig == "PERK" && Sub.Sig == "EPFT" && DataPtr && Size >= 1)
+		if (HDR.DataSize < 4)
 		{
-			LastEPFT = DataPtr[0];
-			HasEPFT = true;
+			Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
+			Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
+			return true;
 		}
 
-		if (DataPtr && Size > 0)
+		uint32_t UncompressedSize;
+		std::memcpy(&UncompressedSize, OriginalData.data(), 4);
+
+		if (!ZlibDecompress(OriginalData.data() + 4,
+			OriginalData.size() - 4,
+			WorkingData,
+			UncompressedSize))
 		{
-			Sub.Data.assign(DataPtr, DataPtr + Size);
-
-			bool IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr, 4);
-
-			if (IsLocalizedField)
-			{
-				uint32_t StringID = 0;
-				std::memcpy(&StringID, DataPtr, sizeof(uint32_t));
-				Sub.StringID = StringID;
-
-				Sub.IsLocalized = true;
-			}
-			else
-			{
-				Sub.IsLocalized = false;
-				Sub.StringID = 0;
-			}
-		}
-
-		if (Sub.Sig == "EDID")
-		{
-			std::string EditorIDValue = RawString::FromBytes(Sub.Data).ToUTF8String();
-
-			this->EditorID = EditorIDValue;
-
-			return;
-		}
-
-		if (GlobalCharacterTracker && DataPtr && Size > 0)
-		{
-			CollectForTracker(Sub.Sig, DataPtr, Size);
-		}
-
-		if (Filter.ShouldParseRecordWithSub(this->Sig, Sub.Sig))
-		{
-			if (Sub.IsLocalized == true)
-			{
-				SubRecords.push_back(Sub);
-			}
-			else
-				if (CanTranslateSub(*this, Sub))
-				{
-					SubRecords.push_back(Sub);
-				}
+			std::cerr << "Error: Decompression failed for " << std::string(Sig, 4)
+				<< " FormID 0x" << std::hex << HDR.FormID << std::dec << "\n";
+			return false;
 		}
 	}
-
-	std::vector<std::pair<std::string, std::string> > GetSubRecordValues(
-		const std::unordered_map<std::string, std::vector<std::string> >& RecordSubMap) const
+	else
 	{
-		std::vector<std::pair<std::string, std::string> > Results;
-
-		std::unordered_map<std::string, std::vector<std::string> >::const_iterator It = RecordSubMap.find(Sig);
-		if (It == RecordSubMap.end())
-		{
-			return Results;
-		}
-
-		for (size_t i = 0; i < It->second.size(); ++i)
-		{
-			const std::string& SubSig = It->second[i];
-			for (size_t j = 0; j < SubRecords.size(); ++j)
-			{
-				if (SubRecords[j].Sig == SubSig)
-				{
-					Results.push_back(std::make_pair(SubRecords[j].Sig, SubRecords[j].GetString()));
-					break;
-				}
-			}
-		}
-
-		return Results;
+		WorkingData = OriginalData;
 	}
 
-	bool IsCell() const
+	std::string ParentSig(Sig, 4);
+	WorkingData = ModifySubRecordsWithFilter(
+		WorkingData.data(),
+		WorkingData.size(),
+		ParentSig,
+		HDR.FormID,
+		modifiedIndex);
+
+	std::vector<uint8_t> FinalData;
+	if (WasCompressed)
 	{
-		return Sig == "CELL";
+		std::vector<uint8_t> Compressed;
+		if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed))
+		{
+			std::cerr << "Error: Compression failed for " << std::string(Sig, 4)
+				<< " FormID 0x" << std::hex << HDR.FormID << std::dec << "\n";
+			return false;
+		}
+
+		FinalData.resize(4 + Compressed.size());
+		uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
+		std::memcpy(FinalData.data(), &UncompSize, 4);
+		std::memcpy(FinalData.data() + 4, Compressed.data(), Compressed.size());
+	}
+	else
+	{
+		FinalData = WorkingData;
 	}
 
-	//This is the key for the main record, not for the sub-record!
-	std::string GetUniqueKey() const
-	{
-		return std::to_string(FormID) + ":" + Sig;
-	}
+	HDR.DataSize = static_cast<uint32_t>(FinalData.size());
 
-	std::string GetEditorID() const
-	{
-		for (size_t i = 0; i < SubRecords.size(); ++i)
-		{
-			if (SubRecords[i].Sig == "EDID" && !SubRecords[i].IsLocalized)
-			{
-				return SubRecords[i].GetString();
-			}
-		}
-		return "";
-	}
+	Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
+	Fout.write(reinterpret_cast<const char*>(FinalData.data()), FinalData.size());
+
+	return true;
+}
 
 
-private:
-	void CollectForTracker(const std::string& SubSig, const uint8_t* DataPtr, size_t Size)
-	{
-		if (Sig == "NPC_" && SubSig == "ACBS" && Size >= 3)
-		{
-			uint8_t sexFlag = DataPtr[2];
-			PendingGenderFromACBS = (sexFlag & 0x01)
-				? CharacterGender::Female
-				: CharacterGender::Male;
-			HasPendingACBS = true;
-		}
-		else if (Sig == "NPC_" && SubSig == "VTCK" && Size >= 4)
-		{
-			std::memcpy(&PendingVTCK, DataPtr, 4);
-			HasPendingVTCK = true;
-		}
-		else if (Sig == "INFO" && SubSig == "ANAM" && Size >= 4)
-		{
-			std::memcpy(&PendingANAM, DataPtr, 4);
-			HasPendingANAM = true;
-		}
-	}
-};
-
-class EspData
+bool ProcessFileContent(std::ifstream& Fin, std::ofstream& Fout, int64_t RemainingSize,
+	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
 {
-public:
-	std::vector<EspRecord> Records;
-	std::unordered_map<std::string, size_t> RecordIndex;
-	std::unordered_set<uint32_t> FormIDs;
+	int64_t BytesProcessed = 0;
 
-	// CELL storage
-	std::vector<EspRecord> CellRecords;
-	std::unordered_map<uint32_t, size_t> CellByFormID;
-	std::unordered_map<std::string, size_t> CellByEditorID;
-
-	size_t GrupCount;
-	bool HasTES4Header;
-
-	EspData() : GrupCount(0), HasTES4Header(false) {}
-
-	std::vector<EspRecord> SearchBySig(const std::string& ParentSig, const std::string& ChildSig = "") const
+	while (Fin.good() && Fin.peek() != EOF)
 	{
-		std::vector<EspRecord> Matches;
+		if (RemainingSize >= 0 && BytesProcessed >= RemainingSize)
+			break;
 
-		auto MatchesRecord = [&](const EspRecord& Rec) -> bool
+		char Sig[4];
+		std::streampos PosBeforeSig = Fin.tellg();
+		if (!Fin.read(Sig, 4)) break;
+
+		if (IsGRUP(Sig))
+		{
+			if (!ProcessGRUP(Fin, Fout, Sig, ModifiedIndex))
 			{
-
-				if (ParentSig != "ALL" && Rec.Sig != ParentSig)
-					return false;
-
-
-				if (ChildSig.empty() || ChildSig == "ALL")
-					return true;
-
-				for (const auto& Sub : Rec.SubRecords)
-				{
-					if (Sub.Sig == ChildSig)
-						return true;
-				}
-
+				std::cerr << "Error: Failed to process GRUP at position " << PosBeforeSig << "\n";
 				return false;
-			};
-
-		for (const auto& Rec : Records)
-		{
-			if (MatchesRecord(Rec))
-				Matches.push_back(Rec);
-		}
-
-		for (const auto& Rec : CellRecords)
-		{
-			if (MatchesRecord(Rec))
-				Matches.push_back(Rec);
-		}
-
-		return Matches;
-	}
-
-	std::vector<EspRecord> SearchByUniqueKey(const std::string& UniqueKey) const
-	{
-		std::vector<EspRecord> Matches;
-
-		for (const auto& Rec : Records)
-		{
-			if (Rec.GetUniqueKey() == UniqueKey)
-			{
-				Matches.push_back(Rec);
-			}
-		}
-
-		for (const auto& Rec : CellRecords)
-		{
-			if (Rec.GetUniqueKey() == UniqueKey)
-			{
-				Matches.push_back(Rec);
-			}
-		}
-
-		return Matches;
-	}
-
-	inline std::string WStringToUTF8(const std::wstring& ws)
-	{
-		if (ws.empty())
-			return {};
-
-		int sizeNeeded = WideCharToMultiByte(
-			CP_UTF8,
-			0,
-			ws.c_str(),
-			(int)ws.size(),
-			nullptr,
-			0,
-			nullptr,
-			nullptr
-		);
-
-		std::string result(sizeNeeded, 0);
-
-		WideCharToMultiByte(
-			CP_UTF8,
-			0,
-			ws.c_str(),
-			(int)ws.size(),
-			&result[0],
-			sizeNeeded,
-			nullptr,
-			nullptr
-		);
-
-		return result;
-	}
-
-	std::vector<EspRecord> SearchRecords(const std::string& Query, bool ExactMatch = false) const
-	{
-		std::vector<EspRecord> Matches;
-
-		auto MatchesQuery = [&](const std::string& Text) -> bool {
-			if (ExactMatch) {
-				return Text == Query;
-			}
-			else {
-				// Case-insensitive fuzzy search
-				std::string LowerText = Text;
-				std::string LowerQuery = Query;
-
-				std::transform(LowerText.begin(), LowerText.end(), LowerText.begin(), ::tolower);
-				std::transform(LowerQuery.begin(), LowerQuery.end(), LowerQuery.begin(), ::tolower);
-
-				return LowerText.find(LowerQuery) != std::string::npos;
-			}
-			};
-
-		for (const auto& Rec : Records) {
-			for (const auto& Sub : Rec.SubRecords) {
-				std::string Text = Sub.GetString();
-				if (!Text.empty() && MatchesQuery(Text)) {
-					Matches.push_back(Rec);
-					break;
-				}
-			}
-		}
-
-		for (const auto& Rec : CellRecords) {
-			for (const auto& Sub : Rec.SubRecords) {
-				std::string Text = Sub.GetString();
-				if (!Text.empty() && MatchesQuery(Text)) {
-					Matches.push_back(Rec);
-					break;
-				}
-			}
-		}
-
-		return Matches;
-	}
-
-	size_t GetRecordsSubCount() const
-	{
-		size_t Count = 0;
-		for (const auto& Rec : Records)
-		{
-			for (const auto& Sub : Rec.SubRecords)
-			{
-				std::string Text = Sub.GetString();
-				if (!Text.empty() && HasVisibleText(Text))
-				{
-					Count++;
-				}
-			}
-		}
-		return Count;
-	}
-
-	size_t GetCellRecordsSubCount() const
-	{
-		size_t Count = 0;
-		for (const auto& Rec : CellRecords)
-		{
-			for (const auto& Sub : Rec.SubRecords)
-			{
-				std::string Text = Sub.GetString();
-				if (!Text.empty() && HasVisibleText(Text))
-				{
-					Count++;
-				}
-			}
-		}
-		return Count;
-	}
-
-	void AddRecord(EspRecord& Rec, RecordFilter& Filter)
-	{
-		const size_t Index = Records.size();
-		const std::string UniqueKey = Rec.GetUniqueKey();
-
-		if (RecordIndex.count(UniqueKey))
-		{
-			std::cerr << "[Warn] Duplicate record key: " << UniqueKey << "\n";
-		}
-		else
-		{
-			RecordIndex[UniqueKey] = Index;
-		}
-
-		if (Rec.Sig == "TES4")
-		{
-			HasTES4Header = true;
-		}
-
-		if (!FormIDs.insert(Rec.FormID).second)
-		{
-			std::cerr << "[Warn] Duplicate FormID 0x"
-				<< std::hex << Rec.FormID << std::dec
-				<< " for record " << Rec.Sig << "\n";
-		}
-
-		// Special handling for CELL
-		if (Rec.IsCell())
-		{
-			size_t Size = CellRecords.size();
-
-			Rec.Index = static_cast<int>(Size);
-
-			const size_t CellIndex = Size;
-			CellRecords.push_back(Rec);
-			CellByFormID[Rec.FormID] = CellIndex;
-
-			std::string EditorID = Rec.GetEditorID();
-			if (!EditorID.empty())
-			{
-				CellByEditorID[EditorID] = CellIndex;
 			}
 		}
 		else
 		{
-			if (Filter.ShouldParseRecordWithSub(Rec.Sig, ""))
+			if (!ProcessRecord(Fin, Fout, Sig, ModifiedIndex))
 			{
-				Rec.Index = static_cast<int>(Records.size());
-
-				Records.push_back(Rec);
+				std::cerr << "Error: Failed to process record at position " << PosBeforeSig << "\n";
+				return false;
 			}
 		}
+
+		std::streampos PosAfterProcess = Fin.tellg();
+		int64_t Consumed = static_cast<int64_t>(PosAfterProcess) - static_cast<int64_t>(PosBeforeSig);
+		BytesProcessed += Consumed;
 	}
 
-	void IncrementGrupCount()
+	return true;
+}
+
+bool ProcessGRUP(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
+	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
+{
+	GroupHeader GH{};
+	std::memcpy(GH.Sig, Sig, 4);
+
+	Read(Fin, GH.Size);
+	Fin.read(GH.Label, 4);
+	Read(Fin, GH.GroupType);
+	Read(Fin, GH.Stamp);
+	Read(Fin, GH.Unknown);
+
+	if (GH.Size < 24)
 	{
-		GrupCount++;
+		std::cerr << "Error: Invalid GRUP size: " << GH.Size << "\n";
+		return false;
 	}
 
-	const EspRecord* FindByUniqueKey(const std::string& Key) const
+	std::streampos GrupHeaderPos = Fout.tellp();
+	Fout.write(reinterpret_cast<char*>(&GH), sizeof(GH));
+
+	std::streampos GrupContentStart = Fout.tellp();
+
+	int64_t ContentSize = GH.Size - 24;
+
+	bool Success = ProcessGRUPContent(Fin, Fout, ContentSize, ModifiedIndex);
+
+	if (!Success)
+		return false;
+
+	std::streampos GrupContentEnd = Fout.tellp();
+	uint32_t ActualContentSize = static_cast<uint32_t>(GrupContentEnd - GrupContentStart);
+	uint32_t ActualGrupSize = ActualContentSize + 24;
+
+	if (ActualGrupSize != GH.Size)
 	{
-		for (size_t i = 0; i < Records.size(); ++i)
+		std::streampos SavedPos = Fout.tellp();
+		Fout.seekp(GrupHeaderPos + std::streamoff(4)); 
+		Fout.write(reinterpret_cast<char*>(&ActualGrupSize), sizeof(ActualGrupSize));
+		Fout.seekp(SavedPos);
+	}
+
+	return true;
+}
+
+bool ProcessGRUPContent(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize,
+	const std::unordered_map<uint64_t, const EspRecord*>& ModifiedIndex)
+{
+	int64_t BytesProcessed = 0;
+
+	while (BytesProcessed < ContentSize && Fin.good())
+	{
+		if (ContentSize - BytesProcessed < 4)
 		{
-			if (Records[i].GetUniqueKey() == Key)
-			{
-				return &Records[i];
-			}
+			int64_t Remaining = ContentSize - BytesProcessed;
+			Fin.seekg(Remaining, std::ios::cur);
+			BytesProcessed += Remaining;
+			break;
 		}
-		return NULL;
-	}
 
-	const EspRecord* FindCellByFormID(uint32_t FormID) const
-	{
-		std::unordered_map<uint32_t, size_t>::const_iterator It = CellByFormID.find(FormID);
-		if (It != CellByFormID.end())
+		char Sig[4];
+		std::streampos PosBeforeRead = Fin.tellg();
+		if (!Fin.read(Sig, 4))
 		{
-			return &CellRecords[It->second];
+			std::cerr << "Error: Failed to read signature in GRUP content\n";
+			break;
 		}
-		return NULL;
-	}
 
-	const EspRecord* FindCellByEditorID(const std::string& EditorID) const
-	{
-		std::unordered_map<std::string, size_t>::const_iterator It = CellByEditorID.find(EditorID);
-		if (It != CellByEditorID.end())
+		if (IsGRUP(Sig))
 		{
-			return &CellRecords[It->second];
+			if (!ProcessGRUP(Fin, Fout, Sig, ModifiedIndex))
+				return false;
 		}
-		return NULL;
-	}
-
-	size_t GetCount() const
-	{
-		return Records.size();
-	}
-
-	size_t GetTotalCount() const
-	{
-		size_t Count = Records.size() + GrupCount;
-		if (HasTES4Header)
+		else
 		{
-			Count--;
+			if (!ProcessRecord(Fin, Fout, Sig, ModifiedIndex))
+				return false;
 		}
-		return Count;
+
+		std::streampos PosAfterProcess = Fin.tellg();
+		int64_t Consumed = static_cast<int64_t>(PosAfterProcess - PosBeforeRead);
+		BytesProcessed += Consumed;
 	}
 
-	void PrintStatistics() const
+	if (BytesProcessed < ContentSize)
 	{
-		std::unordered_map<std::string, size_t> TypeCounts;
-		for (size_t i = 0; i < Records.size(); ++i)
-		{
-			TypeCounts[Records[i].Sig]++;
-		}
-
-		std::cout << "\n=== Record Statistics ===\n";
-		for (std::unordered_map<std::string, size_t>::const_iterator It = TypeCounts.begin();
-			It != TypeCounts.end(); ++It)
-		{
-			std::cout << It->first << ": " << It->second << "\n";
-		}
+		int64_t Remaining = ContentSize - BytesProcessed;
+		std::cerr << "Warning: Skipping " << Remaining << " unprocessed bytes in GRUP\n";
+		Fin.seekg(Remaining, std::ios::cur);
 	}
-};
+	else if (BytesProcessed > ContentSize)
+	{
+		int64_t Excess = BytesProcessed - ContentSize;
+		std::cerr << "Warning: Consumed " << Excess << " extra bytes, rewinding\n";
+		Fin.seekg(-Excess, std::ios::cur);
+	}
+
+	return true;
+}
+
+bool SaveEsp(const char* SavePath)
+{
+	if (LastSetPath.empty())
+		return false;
+
+	std::ifstream Fin(LastSetPath, std::ios::binary);
+	if (!Fin.is_open())
+		return false;
+
+	int Wlen = MultiByteToWideChar(CP_UTF8, 0, SavePath, -1, NULL, 0);
+	if (Wlen == 0)
+	{
+		Fin.close();
+		return false;
+	}
+
+	std::wstring WSavePath(Wlen - 1, 0);
+	MultiByteToWideChar(CP_UTF8, 0, SavePath, -1, &WSavePath[0], Wlen);
+
+	std::ofstream Fout(WSavePath, std::ios::binary);
+	if (!Fout.is_open())
+	{
+		Fin.close();
+		return false;
+	}
+
+	static char readBuf[4 * 1024 * 1024];
+	static char writeBuf[4 * 1024 * 1024];
+	Fin.rdbuf()->pubsetbuf(readBuf, sizeof(readBuf));
+	Fout.rdbuf()->pubsetbuf(writeBuf, sizeof(writeBuf));
+
+	auto modifiedIndex = BuildModifiedIndex();
+	std::cout << "Modified records in index: " << modifiedIndex.size() << "\n";
+
+	bool Success = ProcessFileContent(Fin, Fout, -1, modifiedIndex);
+
+	Fin.close();
+	Fout.close();
+
+	if (Success)
+		std::cout << "Successfully saved modified ESP to: " << SavePath << "\n";
+	else
+		std::cerr << "Failed to save ESP file\n";
+
+	return Success;
+}
+
+#pragma endregion
+
