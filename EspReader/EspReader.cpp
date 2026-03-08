@@ -8,7 +8,6 @@
 #include <unordered_set>
 #include "miniz.h"
 #include "EspRecord.cpp"         
-#include "CharacterTrackerBuilder.cpp"  
 #include <random>
 
 #define NOMINMAX  
