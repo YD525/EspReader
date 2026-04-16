@@ -82,11 +82,10 @@ public:
     }
 };
 
-
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "2.0.0";
+static const std::string Version = "1.5.1";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -813,7 +812,10 @@ int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
     return 0;
 }
 
-bool C_SaveEsp(EspInstance* h, const char* Utf8Path) { return SaveEsp_Inst(h, Utf8Path); }
+bool C_SaveEsp(EspInstance* h, const char* Utf8Path) 
+{ 
+    return SaveEsp_Inst(h, Utf8Path);
+}
 
 void C_Clear(EspInstance* h) { if (h) h->ClearData(); }
 
