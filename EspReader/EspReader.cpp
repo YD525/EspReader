@@ -166,7 +166,8 @@ void ParseSubRecords(EspInstance* Instance,const uint8_t* data, size_t dataSize,
     {
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
         if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
-        rec.AddSubRecord(sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
+        rec.AddSubRecord(Instance->TextValidator
+            ,sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
             const_cast<RecordFilter&>(filter));
         offset += sizeof(SubRecordHeader) + sub->Size;
     }
@@ -192,7 +193,9 @@ void ParseSubRecordsStream(EspInstance* Instance,std::ifstream& f, uint32_t reco
         if (bytesRead + sub.Size > recordSize) { f.seekg(recordSize - bytesRead, std::ios::cur); break; }
         std::vector<uint8_t> buf(sub.Size);
         if (sub.Size > 0) { f.read(reinterpret_cast<char*>(buf.data()), sub.Size); bytesRead += sub.Size; }
-        rec.AddSubRecord(sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
+        rec.AddSubRecord(
+            Instance->TextValidator
+            ,sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
     }
     rec.OnRecordFinished(
         &Instance->DeferredInfoLinks,

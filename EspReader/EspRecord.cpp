@@ -383,14 +383,14 @@ class EspRecord
 		return false;
 	}
 
-	bool CanTranslateSub(const EspRecord& Parent, const SubRecordData& Item)
+	bool CanTranslateSub(ESP_HeuristicAnalysis* Analysis,const EspRecord& Parent, const SubRecordData& Item)
 	{
 		if (Item.Data.empty())
 			return false;
 
-		if (GlobalTextValidator)
+		if (Analysis)
 		{
-			bool IsValid = GlobalTextValidator->IsValidTranslatableText(
+			bool IsValid = Analysis->IsValidTranslatableText(
 				Parent.Sig,
 				Item.Sig,
 				Item.Data.data(),
@@ -754,7 +754,7 @@ class EspRecord
 		G_PendingFactions.clear();
 		G_PendingRaces.clear();
 	}
-	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
+	void AddSubRecord(ESP_HeuristicAnalysis* Analysis,const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
 		Sub.Sig = std::string(Str, 4);
@@ -813,7 +813,7 @@ class EspRecord
 				SubRecords.push_back(Sub);
 			}
 			else
-				if (CanTranslateSub(*this, Sub))
+				if (CanTranslateSub(Analysis,*this, Sub))
 				{
 					SubRecords.push_back(Sub);
 				}

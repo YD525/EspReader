@@ -538,5 +538,3 @@ public:
         return ss.str();
     }
 };
-
-extern ESP_HeuristicAnalysis* GlobalTextValidator;
