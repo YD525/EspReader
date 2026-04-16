@@ -318,7 +318,6 @@ class EspRecord
 	int Index;
 	std::string EditorID;
 
-	static CharacterTracker* GlobalCharacterTracker;
 	uint32_t        PendingVTCK = 0;
 	bool            HasPendingVTCK = false;
 	uint32_t        PendingANAM = 0;
@@ -535,12 +534,12 @@ class EspRecord
 	std::vector<uint32_t> G_PendingFactions;
 	std::vector<uint32_t> G_PendingRaces;
 
-	void OnSubRecord(SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
+	void OnSubRecord(CharacterTracker* CurrentTracker,SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
 	{
-		if (!GlobalCharacterTracker)
+		if (!CurrentTracker)
 			return;
 
-		if (GlobalCharacterTracker && DataPtr && Size > 0)
+		if (CurrentTracker && DataPtr && Size > 0)
 		{
 			CollectForTracker(Sub.Sig, DataPtr, Size);
 		}
@@ -599,6 +598,7 @@ class EspRecord
 	}
 
 	void OnRecordFinished(
+		CharacterTracker* CurrentTracker,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks, 
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredVoiceTypeLinks,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredFactionLinks,
@@ -616,11 +616,11 @@ class EspRecord
 			if (HasPendingACBS)
 				Gender = PendingGenderFromACBS;
 
-			auto& npc = GlobalCharacterTracker->RegisterNpc(FormID, Name, EditorID, VoiceType, Gender);
+			auto& npc = CurrentTracker->RegisterNpc(FormID, Name, EditorID, VoiceType, Gender);
 
 			if (HasPendingVTCK)
 			{
-				GlobalCharacterTracker->VoiceTypeToNPC[PendingVTCK] = FormID;
+				CurrentTracker->VoiceTypeToNPC[PendingVTCK] = FormID;
 				npc.LinkedVoiceTypes.push_back(PendingVTCK);
 			}
 
@@ -670,8 +670,8 @@ class EspRecord
 			{
 				uint32_t NpcID = G_PendingActors[i];
 
-				auto It = GlobalCharacterTracker->Characters.find(NpcID);
-				if (It != GlobalCharacterTracker->Characters.end())
+				auto It = CurrentTracker->Characters.find(NpcID);
+				if (It != CurrentTracker->Characters.end())
 				{
 					It->second.LinkedInfos.push_back(FormID);
 				}
@@ -686,13 +686,13 @@ class EspRecord
 			{
 				uint32_t VoiceTypeFID = G_PendingVoiceTypes[i];
 
-				auto It = GlobalCharacterTracker->VoiceTypeToNPC.find(VoiceTypeFID);
-				if (It != GlobalCharacterTracker->VoiceTypeToNPC.end())
+				auto It = CurrentTracker->VoiceTypeToNPC.find(VoiceTypeFID);
+				if (It != CurrentTracker->VoiceTypeToNPC.end())
 				{
 					uint32_t NpcID = It->second;
 
-					auto chr = GlobalCharacterTracker->Characters.find(NpcID);
-					if (chr != GlobalCharacterTracker->Characters.end())
+					auto chr = CurrentTracker->Characters.find(NpcID);
+					if (chr != CurrentTracker->Characters.end())
 					{
 						chr->second.LinkedVoiceTypes.push_back(VoiceTypeFID);
 					}
@@ -712,8 +712,8 @@ class EspRecord
 				{
 					uint32_t NpcID = G_PendingActors[j];
 
-					auto It = GlobalCharacterTracker->Characters.find(NpcID);
-					if (It != GlobalCharacterTracker->Characters.end())
+					auto It = CurrentTracker->Characters.find(NpcID);
+					if (It != CurrentTracker->Characters.end())
 					{
 						It->second.LinkedFactions.push_back(Faction);
 					}
@@ -733,8 +733,8 @@ class EspRecord
 				{
 					uint32_t NpcID = G_PendingActors[j];
 
-					auto It = GlobalCharacterTracker->Characters.find(NpcID);
-					if (It != GlobalCharacterTracker->Characters.end())
+					auto It = CurrentTracker->Characters.find(NpcID);
+					if (It != CurrentTracker->Characters.end())
 					{
 						It->second.LinkedRaces.push_back(Race);
 					}
@@ -754,7 +754,7 @@ class EspRecord
 		G_PendingFactions.clear();
 		G_PendingRaces.clear();
 	}
-	void AddSubRecord(ESP_HeuristicAnalysis* Analysis,const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
+	void AddSubRecord(CharacterTracker* CurrentTracker,ESP_HeuristicAnalysis* Analysis,const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
 		Sub.Sig = std::string(Str, 4);
@@ -794,7 +794,7 @@ class EspRecord
 				Sub.StringID = 0;
 			}
 
-			OnSubRecord(Sub, DataPtr, Size);
+			OnSubRecord(CurrentTracker,Sub, DataPtr, Size);
 		}
 
 		if (Sub.Sig == "EDID")

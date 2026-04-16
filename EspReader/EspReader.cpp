@@ -1,13 +1,4 @@
 ﻿
-
-
-// ============================================================
-//  EspReader – Multi-instance rewrite
-//  Every exported function's first parameter is a handle
-//  (EspInstance*) returned by C_CreateInstance().
-//  Mirrors the PexReader pattern used in Pex.Interop.dll.
-// ============================================================
-
 #include <fstream>
 #include <vector>
 #include <string>
@@ -166,12 +157,15 @@ void ParseSubRecords(EspInstance* Instance,const uint8_t* data, size_t dataSize,
     {
         const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
         if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
-        rec.AddSubRecord(Instance->TextValidator
+        rec.AddSubRecord(
+            Instance->CharTracker,
+            Instance->TextValidator
             ,sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
             const_cast<RecordFilter&>(filter));
         offset += sizeof(SubRecordHeader) + sub->Size;
     }
     rec.OnRecordFinished(
+        Instance->CharTracker,
         &Instance->DeferredInfoLinks,
         &Instance->DeferredVoiceTypeLinks,
         &Instance->DeferredFactionLinks,
@@ -194,10 +188,12 @@ void ParseSubRecordsStream(EspInstance* Instance,std::ifstream& f, uint32_t reco
         std::vector<uint8_t> buf(sub.Size);
         if (sub.Size > 0) { f.read(reinterpret_cast<char*>(buf.data()), sub.Size); bytesRead += sub.Size; }
         rec.AddSubRecord(
+            Instance->CharTracker,
             Instance->TextValidator
             ,sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
     }
     rec.OnRecordFinished(
+        Instance->CharTracker,
         &Instance->DeferredInfoLinks,
         &Instance->DeferredVoiceTypeLinks,
         &Instance->DeferredFactionLinks,
@@ -214,8 +210,7 @@ static void ParseRecord_Inst(EspInstance* Instance,std::ifstream& f, const char 
     Read(f, hdr.DataSize); Read(f, hdr.Flags); Read(f, hdr.FormID);
     Read(f, hdr.VersionCtrl); Read(f, hdr.Version); Read(f, hdr.Unknown);
 
-    // Temporarily wire global tracker so EspRecord callbacks work
-    EspRecord::GlobalCharacterTracker = Instance->CharTracker;
+    //CharacterTracker* CurrentTracker = Instance->CharTracker;
 
     EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
     if (IsCompressed(hdr))
@@ -278,7 +273,8 @@ static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
             uint32_t recordTotalSize = 24 + hdr.DataSize;
             if (recordTotalSize > state.remaining) { groupStack.pop(); continue; }
 
-            EspRecord::GlobalCharacterTracker = Instance->CharTracker;
+            //CharacterTracker* CurrentTracker = Instance->CharTracker;
+
             EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
             if (IsCompressed(hdr))
             {
@@ -335,7 +331,8 @@ static void ParseCellGroup_Inst(EspInstance* Instance,std::ifstream& f,uint32_t 
             uint32_t recordTotalSize = hdr.DataSize;
             if (recordTotalSize > (groupSize - bytesRead)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
 
-            EspRecord::GlobalCharacterTracker = Instance->CharTracker;
+            //CharacterTracker* CurrentTracker = Instance->CharTracker;
+
             EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
             if (IsCompressed(hdr))
             {
@@ -786,8 +783,7 @@ int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
     Instance->LastSetPath = EspPath;
     Instance->Data = new EspData();
 
-    // Wire global tracker
-    EspRecord::GlobalCharacterTracker = Instance->CharTracker;
+    //CharacterTracker* CurrentTracker = Instance->CharTracker;
 
     std::unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks = nullptr;
     std::unordered_map<uint32_t, std::vector<uint32_t>>* DeferredVoiceTypeLinks = nullptr;
