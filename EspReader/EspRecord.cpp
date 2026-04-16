@@ -10,11 +10,6 @@
 #endif
 #include "CharacterTracker.h"
 
-extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredInfoLinks;
-extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredVoiceTypeLinks;
-extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredFactionLinks;
-extern std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredRaceLinks;
-
 // ===== Record Filter Configuration =====
 class RecordFilter
 {
@@ -72,7 +67,6 @@ private:
 	std::unordered_set<std::string> RecordTypes_;
 	std::unordered_map<std::string, std::unordered_set<std::string>> SubRecordFilters_;
 };
-
 
 inline std::string Windows1252ToUTF8(const uint8_t* Data, size_t Size)
 {
@@ -604,12 +598,18 @@ class EspRecord
 		}
 	}
 
-	void OnRecordFinished(const char* Str, const uint8_t* DataPtr, size_t Size)
+	void OnRecordFinished(
+		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks, 
+		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredVoiceTypeLinks,
+		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredFactionLinks,
+		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredRaceLinks,
+
+		const char* Str, const uint8_t* DataPtr, size_t Size)
 	{
 		if (Sig == "NPC_")
 		{
 			std::string Name = G_Name;
-			std::string EditorID = this->GetEditorID();
+			std::string EditorID = this->EditorID;
 			std::string VoiceType = G_VoiceType;
 			CharacterGender Gender = G_Gender;
 
@@ -628,68 +628,90 @@ class EspRecord
 				npc.Gender = CharacterRecord::InferGenderFromVoiceType(VoiceType);
 
 			{
-				auto itInfo = DeferredInfoLinks.find(FormID);
-				if (itInfo != DeferredInfoLinks.end())
+				auto ItInfo = DeferredInfoLinks->find(FormID);
+				if (ItInfo != DeferredInfoLinks->end())
 				{
-					for (uint32_t InfoFID : itInfo->second)
-						npc.LinkedInfos.push_back(InfoFID);
-					DeferredInfoLinks.erase(itInfo);
+					for (size_t i = 0; i < ItInfo->second.size(); ++i)
+					{
+						npc.LinkedInfos.push_back(ItInfo->second[i]);
+					}
+					DeferredInfoLinks->erase(ItInfo);
 				}
 
-				auto itFaction = DeferredFactionLinks.find(FormID);
-				if (itFaction != DeferredFactionLinks.end())
+				auto ItFaction = DeferredFactionLinks->find(FormID);
+				if (ItFaction != DeferredFactionLinks->end())
 				{
-					for (uint32_t FactionFID : itFaction->second)
-						npc.LinkedFactions.push_back(FactionFID);
-					DeferredFactionLinks.erase(itFaction);
+					for (size_t i = 0; i < ItFaction->second.size(); ++i)
+					{
+						npc.LinkedFactions.push_back(ItFaction->second[i]);
+					}
+					DeferredFactionLinks->erase(ItFaction);
 				}
 
-				auto itRace = DeferredRaceLinks.find(FormID);
-				if (itRace != DeferredRaceLinks.end())
+				auto ItRace = DeferredRaceLinks->find(FormID);
+				if (ItRace != DeferredRaceLinks->end())
 				{
-					for (uint32_t RaceFID : itRace->second)
-						npc.LinkedRaces.push_back(RaceFID);
-					DeferredRaceLinks.erase(itRace);
+					for (size_t i = 0; i < ItRace->second.size(); ++i)
+					{
+						npc.LinkedRaces.push_back(ItRace->second[i]);
+					}
+					DeferredRaceLinks->erase(ItRace);
 				}
 			}
 		}
 
-		if (!G_PendingActors.empty() || !G_PendingVoiceTypes.empty()
-			|| !G_PendingFactions.empty() || !G_PendingRaces.empty())
+		if (!G_PendingActors.empty() ||
+			!G_PendingVoiceTypes.empty() ||
+			!G_PendingFactions.empty() ||
+			!G_PendingRaces.empty())
 		{
-			for (auto NpcID : G_PendingActors)
+			// ===== Actors =====
+			for (size_t i = 0; i < G_PendingActors.size(); ++i)
 			{
-				auto it = GlobalCharacterTracker->Characters.find(NpcID);
-				if (it != GlobalCharacterTracker->Characters.end())
+				uint32_t NpcID = G_PendingActors[i];
+
+				auto It = GlobalCharacterTracker->Characters.find(NpcID);
+				if (It != GlobalCharacterTracker->Characters.end())
 				{
-					it->second.LinkedInfos.push_back(FormID);
+					It->second.LinkedInfos.push_back(FormID);
 				}
 				else
 				{
-					DeferredInfoLinks[NpcID].push_back(FormID);
+					(*DeferredInfoLinks)[NpcID].push_back(FormID);
 				}
 			}
 
-			for (auto VoiceTypeFID : G_PendingVoiceTypes)
+			// ===== VoiceTypes =====
+			for (size_t i = 0; i < G_PendingVoiceTypes.size(); ++i)
 			{
+				uint32_t VoiceTypeFID = G_PendingVoiceTypes[i];
+
 				auto It = GlobalCharacterTracker->VoiceTypeToNPC.find(VoiceTypeFID);
 				if (It != GlobalCharacterTracker->VoiceTypeToNPC.end())
 				{
 					uint32_t NpcID = It->second;
+
 					auto chr = GlobalCharacterTracker->Characters.find(NpcID);
 					if (chr != GlobalCharacterTracker->Characters.end())
+					{
 						chr->second.LinkedVoiceTypes.push_back(VoiceTypeFID);
+					}
 				}
 				else
 				{
-					DeferredVoiceTypeLinks[VoiceTypeFID].push_back(FormID);
+					(*DeferredVoiceTypeLinks)[VoiceTypeFID].push_back(FormID);
 				}
 			}
 
-			for (auto Faction : G_PendingFactions)
+			// ===== Factions =====
+			for (size_t i = 0; i < G_PendingFactions.size(); ++i)
 			{
-				for (auto NpcID : G_PendingActors)
+				uint32_t Faction = G_PendingFactions[i];
+
+				for (size_t j = 0; j < G_PendingActors.size(); ++j)
 				{
+					uint32_t NpcID = G_PendingActors[j];
+
 					auto It = GlobalCharacterTracker->Characters.find(NpcID);
 					if (It != GlobalCharacterTracker->Characters.end())
 					{
@@ -697,15 +719,20 @@ class EspRecord
 					}
 					else
 					{
-						DeferredFactionLinks[NpcID].push_back(Faction);
+						(*DeferredFactionLinks)[NpcID].push_back(Faction);
 					}
 				}
 			}
 
-			for (auto Race : G_PendingRaces)
+			// ===== Races =====
+			for (size_t i = 0; i < G_PendingRaces.size(); ++i)
 			{
-				for (auto NpcID : G_PendingActors)
+				uint32_t Race = G_PendingRaces[i];
+
+				for (size_t j = 0; j < G_PendingActors.size(); ++j)
 				{
+					uint32_t NpcID = G_PendingActors[j];
+
 					auto It = GlobalCharacterTracker->Characters.find(NpcID);
 					if (It != GlobalCharacterTracker->Characters.end())
 					{
@@ -713,7 +740,7 @@ class EspRecord
 					}
 					else
 					{
-						DeferredRaceLinks[NpcID].push_back(Race);
+						(*DeferredRaceLinks)[NpcID].push_back(Race);
 					}
 				}
 			}
@@ -727,7 +754,6 @@ class EspRecord
 		G_PendingFactions.clear();
 		G_PendingRaces.clear();
 	}
-
 	void AddSubRecord(const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
@@ -831,21 +857,6 @@ class EspRecord
 	{
 		return std::to_string(FormID) + ":" + Sig;
 	}
-
-	std::string GetEditorID() const
-	{
-		for (size_t i = 0; i < SubRecords.size(); ++i)
-		{
-			if (SubRecords[i].Sig == "EDID" && !SubRecords[i].IsLocalized)
-			{
-				return SubRecords[i].GetString();
-			}
-		}
-		return "";
-	}
-
-
-
 };
 
 class EspData
@@ -1072,7 +1083,7 @@ public:
 			CellRecords.push_back(Rec);
 			CellByFormID[Rec.FormID] = CellIndex;
 
-			std::string EditorID = Rec.GetEditorID();
+			std::string EditorID = Rec.EditorID;
 			if (!EditorID.empty())
 			{
 				CellByEditorID[EditorID] = CellIndex;

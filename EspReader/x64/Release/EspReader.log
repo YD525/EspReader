@@ -1,214 +1,207 @@
 ﻿  CharacterTracker.h
   ESPHeuristicAnalysis.cpp
   EspReader.cpp
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(92,13): warning C4273: 'C_GetVersion': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(29,25):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(149,38): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(151,52): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(724,14): warning C4273: 'C_CreateInstance': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(653,29):
+      see previous definition of 'C_CreateInstance'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(725,14): warning C4273: 'C_DestroyInstance': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(654,29):
+      see previous definition of 'C_DestroyInstance'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(727,13): warning C4273: 'C_GetVersion': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(657,28):
       see previous definition of 'C_GetVersion'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(97,5): warning C4273: 'C_GetVersionLength': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(30,17):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(728,14): warning C4273: 'C_GetVersionLength': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(658,29):
       see previous definition of 'C_GetVersionLength'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(102,13): warning C4273: 'C_GetFieldReport': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(38,28):
-      see previous definition of 'C_GetFieldReport'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(115,5): warning C4273: 'C_GetFieldReportLength': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(39,20):
-      see previous definition of 'C_GetFieldReportLength'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(127,22): warning C4273: 'C_GetSubRecordData_Ptr': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(51,34):
-      see previous definition of 'C_GetSubRecordData_Ptr'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(134,5): warning C4273: 'C_GetRecordSig': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(43,17):
-      see previous definition of 'C_GetRecordSig'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(149,5): warning C4273: 'C_SubRecordData_GetStringUtf8': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(60,17):
-      see previous definition of 'C_SubRecordData_GetStringUtf8'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(166,5): warning C4273: 'C_SubRecordData_GetSigUtf8': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(61,17):
-      see previous definition of 'C_SubRecordData_GetSigUtf8'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(181,5): warning C4273: 'C_SubRecordData_GetOccurrenceIndex': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(52,17):
-      see previous definition of 'C_SubRecordData_GetOccurrenceIndex'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(186,5): warning C4273: 'C_SubRecordData_GetIndex': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(53,17):
-      see previous definition of 'C_SubRecordData_GetIndex'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(191,13): warning C4273: 'C_SubRecordData_GetSig': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(54,25):
-      see previous definition of 'C_SubRecordData_GetSig'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(197,13): warning C4273: 'C_SubRecordData_GetString': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(55,25):
-      see previous definition of 'C_SubRecordData_GetString'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(205,6): warning C4273: 'C_SubRecordData_IsLocalized': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(56,18):
-      see previous definition of 'C_SubRecordData_IsLocalized'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(210,10): warning C4273: 'C_SubRecordData_GetStringID': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(57,22):
-      see previous definition of 'C_SubRecordData_GetStringID'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(215,5): warning C4273: 'C_SubRecordData_GetDataSize': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(58,17):
-      see previous definition of 'C_SubRecordData_GetDataSize'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(220,6): warning C4273: 'C_SubRecordData_GetData': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(59,18):
-      see previous definition of 'C_SubRecordData_GetData'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(232,5): warning C4273: 'C_GetRecordIndex': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(47,17):
-      see previous definition of 'C_GetRecordIndex'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(238,10): warning C4273: 'C_GetRecordFormID': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(44,22):
-      see previous definition of 'C_GetRecordFormID'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(244,13): warning C4273: 'C_GetRecordEditorID': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(45,25):
-      see previous definition of 'C_GetRecordEditorID'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(253,10): warning C4273: 'C_GetRecordFlags': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(46,22):
-      see previous definition of 'C_GetRecordFlags'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(259,5): warning C4273: 'C_GetSubRecordCount': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(49,17):
-      see previous definition of 'C_GetSubRecordCount'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(353,5): warning C4273: 'C_GetCharacterCount': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(63,22):
-      see previous definition of 'C_GetCharacterCount'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(359,10): warning C4273: 'C_GetCharacterFormID': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(65,22):
-      see previous definition of 'C_GetCharacterFormID'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(365,5): warning C4273: 'C_GetCharacterName': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(66,22):
-      see previous definition of 'C_GetCharacterName'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(372,5): warning C4273: 'C_GetCharacterEditorID': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(67,22):
-      see previous definition of 'C_GetCharacterEditorID'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(379,5): warning C4273: 'C_GetCharacterVoiceType': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(68,22):
-      see previous definition of 'C_GetCharacterVoiceType'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(386,5): warning C4273: 'C_GetCharacterGender': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(69,22):
-      see previous definition of 'C_GetCharacterGender'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(398,5): warning C4273: 'C_GetCharacterLinkedInfoCount': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(71,22):
-      see previous definition of 'C_GetCharacterLinkedInfoCount'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(404,10): warning C4273: 'C_GetCharacterLinkedInfo': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(72,22):
-      see previous definition of 'C_GetCharacterLinkedInfo'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(411,5): warning C4273: 'C_GetCharacterLinkedFactionCount': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(73,22):
-      see previous definition of 'C_GetCharacterLinkedFactionCount'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(417,10): warning C4273: 'C_GetCharacterLinkedFaction': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(74,22):
-      see previous definition of 'C_GetCharacterLinkedFaction'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(424,5): warning C4273: 'C_GetCharacterLinkedRaceCount': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(75,22):
-      see previous definition of 'C_GetCharacterLinkedRaceCount'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(430,10): warning C4273: 'C_GetCharacterLinkedRace': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(76,22):
-      see previous definition of 'C_GetCharacterLinkedRace'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(437,5): warning C4273: 'C_GetCharacterLinkedVoiceTypeCount': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(77,22):
-      see previous definition of 'C_GetCharacterLinkedVoiceTypeCount'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(443,10): warning C4273: 'C_GetCharacterLinkedVoiceType': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(78,22):
-      see previous definition of 'C_GetCharacterLinkedVoiceType'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(505,35): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(507,49): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(958,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(37,17):
-      see previous definition of 'C_ReadEsp'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(963,6): warning C4273: 'C_InitDefaultFilter': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(33,18):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(730,6): warning C4273: 'C_InitDefaultFilter': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(661,21):
       see previous definition of 'C_InitDefaultFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(969,6): warning C4273: 'C_ClearFilter': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(36,18):
-      see previous definition of 'C_ClearFilter'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(986,5): warning C4273: 'C_SetDefaultFilter': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(34,17):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(737,5): warning C4273: 'C_SetDefaultFilter': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(662,21):
       see previous definition of 'C_SetDefaultFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1045,6): warning C4273: 'C_SetFilter': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(35,17):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(760,5): warning C4273: 'C_SetFilter': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(663,21):
       see previous definition of 'C_SetFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1058,19): warning C4267: 'return': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1080,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1103,6): warning C4273: 'C_Init': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(32,18):
-      see previous definition of 'C_Init'
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(769,6): warning C4273: 'C_ClearFilter': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(664,21):
+      see previous definition of 'C_ClearFilter'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1108,6): warning C4273: 'C_ClearCharacterTracker': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(80,18):
-      see previous definition of 'C_ClearCharacterTracker'
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(774,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(667,29):
+      see previous definition of 'C_ReadEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1117,6): warning C4273: 'C_Close': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(87,18):
-      see previous definition of 'C_Close'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1128,13): warning C4273: 'C_SearchBySig': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(40,25):
-      see previous definition of 'C_SearchBySig'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1145,6): warning C4273: 'FreeSearchResults': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(41,18):
-      see previous definition of 'FreeSearchResults'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1232,11): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1250,6): warning C4273: 'C_ModifySubRecordByOffset': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(82,18):
-      see previous definition of 'C_ModifySubRecordByOffset'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1255,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(83,18):
-      see previous definition of 'C_ModifySubRecord'
-  
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1270,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1300,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1324,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(84,18):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(817,6): warning C4273: 'C_SaveEsp': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(668,29):
       see previous definition of 'C_SaveEsp'
   
-C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1359,6): warning C4273: 'C_Clear': inconsistent dll linkage
-      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(86,18):
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(819,6): warning C4273: 'C_Clear': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(669,29):
       see previous definition of 'C_Clear'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(821,13): warning C4273: 'C_GetFieldReport': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(672,28):
+      see previous definition of 'C_GetFieldReport'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(826,5): warning C4273: 'C_GetFieldReportLength': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(673,29):
+      see previous definition of 'C_GetFieldReportLength'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(832,13): warning C4273: 'C_SearchBySig': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(676,28):
+      see previous definition of 'C_SearchBySig'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(844,6): warning C4273: 'FreeSearchResults': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(677,29):
+      see previous definition of 'FreeSearchResults'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(852,22): warning C4273: 'C_GetSubRecordData_Ptr': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(688,37):
+      see previous definition of 'C_GetSubRecordData_Ptr'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(856,5): warning C4273: 'C_GetRecordSig': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(680,29):
+      see previous definition of 'C_GetRecordSig'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(861,13): warning C4273: 'C_GetRecordFormID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(681,29):
+      see previous definition of 'C_GetRecordFormID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(862,13): warning C4273: 'C_GetRecordEditorID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(682,28):
+      see previous definition of 'C_GetRecordEditorID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(863,13): warning C4273: 'C_GetRecordFlags': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(683,29):
+      see previous definition of 'C_GetRecordFlags'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(864,13): warning C4273: 'C_GetRecordIndex': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(684,29):
+      see previous definition of 'C_GetRecordIndex'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(865,13): warning C4273: 'C_GetSubRecordCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(685,29):
+      see previous definition of 'C_GetSubRecordCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(867,13): warning C4273: 'C_SubRecordData_GetOccurrenceIndex': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(689,29):
+      see previous definition of 'C_SubRecordData_GetOccurrenceIndex'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(868,13): warning C4273: 'C_SubRecordData_GetIndex': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(690,29):
+      see previous definition of 'C_SubRecordData_GetIndex'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(869,13): warning C4273: 'C_SubRecordData_GetSig': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(691,28):
+      see previous definition of 'C_SubRecordData_GetSig'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(870,13): warning C4273: 'C_SubRecordData_GetString': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(692,28):
+      see previous definition of 'C_SubRecordData_GetString'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(871,13): warning C4273: 'C_SubRecordData_IsLocalized': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(693,29):
+      see previous definition of 'C_SubRecordData_IsLocalized'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(872,13): warning C4273: 'C_SubRecordData_GetStringID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(694,29):
+      see previous definition of 'C_SubRecordData_GetStringID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(873,13): warning C4273: 'C_SubRecordData_GetDataSize': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(695,29):
+      see previous definition of 'C_SubRecordData_GetDataSize'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(874,13): warning C4273: 'C_SubRecordData_GetData': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(696,29):
+      see previous definition of 'C_SubRecordData_GetData'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(879,5): warning C4273: 'C_SubRecordData_GetStringUtf8': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(697,29):
+      see previous definition of 'C_SubRecordData_GetStringUtf8'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(884,5): warning C4273: 'C_SubRecordData_GetSigUtf8': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(698,29):
+      see previous definition of 'C_SubRecordData_GetSigUtf8'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(891,6): warning C4273: 'C_ModifySubRecordByOffset': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(701,21):
+      see previous definition of 'C_ModifySubRecordByOffset'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(911,6): warning C4273: 'C_ModifySubRecord': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(702,21):
+      see previous definition of 'C_ModifySubRecord'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(939,6): warning C4273: 'C_ClearCharacterTracker': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(705,25):
+      see previous definition of 'C_ClearCharacterTracker'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(946,10): warning C4273: 'C_GetCharacterCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(706,25):
+      see previous definition of 'C_GetCharacterCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(947,10): warning C4273: 'C_GetCharacterFormID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(707,25):
+      see previous definition of 'C_GetCharacterFormID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(948,10): warning C4273: 'C_GetCharacterName': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(708,25):
+      see previous definition of 'C_GetCharacterName'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(949,10): warning C4273: 'C_GetCharacterEditorID': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(709,25):
+      see previous definition of 'C_GetCharacterEditorID'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(950,10): warning C4273: 'C_GetCharacterVoiceType': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(710,25):
+      see previous definition of 'C_GetCharacterVoiceType'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(951,10): warning C4273: 'C_GetCharacterGender': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(711,25):
+      see previous definition of 'C_GetCharacterGender'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(955,10): warning C4273: 'C_GetCharacterLinkedInfoCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(712,25):
+      see previous definition of 'C_GetCharacterLinkedInfoCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(956,10): warning C4273: 'C_GetCharacterLinkedInfo': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(713,25):
+      see previous definition of 'C_GetCharacterLinkedInfo'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(957,10): warning C4273: 'C_GetCharacterLinkedFactionCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(714,25):
+      see previous definition of 'C_GetCharacterLinkedFactionCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(958,10): warning C4273: 'C_GetCharacterLinkedFaction': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(715,25):
+      see previous definition of 'C_GetCharacterLinkedFaction'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(959,10): warning C4273: 'C_GetCharacterLinkedRaceCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(716,25):
+      see previous definition of 'C_GetCharacterLinkedRaceCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(960,10): warning C4273: 'C_GetCharacterLinkedRace': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(717,25):
+      see previous definition of 'C_GetCharacterLinkedRace'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(961,10): warning C4273: 'C_GetCharacterLinkedVoiceTypeCount': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(718,25):
+      see previous definition of 'C_GetCharacterLinkedVoiceTypeCount'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(962,10): warning C4273: 'C_GetCharacterLinkedVoiceType': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(719,25):
+      see previous definition of 'C_GetCharacterLinkedVoiceType'
   
   TextHelper.cpp
   miniz.c
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
-  Generating code
-  Previous IPDB not found, fall back to full compilation.
-  All 2984 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
-  Finished generating code
-  EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll
+EspReader.obj : error LNK2001: unresolved external symbol "class ESP_HeuristicAnalysis * GlobalTextValidator" (?GlobalTextValidator@@3PEAVESP_HeuristicAnalysis@@EA)
+EspReader.obj : error LNK2001: unresolved external symbol "public: static class CharacterTracker * EspRecord::GlobalCharacterTracker" (?GlobalCharacterTracker@EspRecord@@2PEAVCharacterTracker@@EA)
+C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll : fatal error LNK1120: 2 unresolved externals
