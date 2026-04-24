@@ -85,7 +85,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.5.1";
+static const std::string Version = "1.5.2";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -657,8 +657,9 @@ extern "C"
     SSELex_API int          C_GetVersionLength();
 
     // ── Filter ───────────────────────────────────────────────
-    SSELex_API void C_InitDefaultFilter(EspInstance* handle);
-    SSELex_API int  C_SetDefaultFilter(EspInstance* handle);
+    SSELex_API void C_InitFilter(EspInstance* handle);
+    SSELex_API int  C_SetSkyrimFilter(EspInstance* handle);
+    SSELex_API int  C_GetFilter(EspInstance* handle, uint8_t* buffer, int bufferSize);
     SSELex_API int  C_SetFilter(EspInstance* handle, const char* parentSig, const char** childSigs, int childCount);
     SSELex_API void C_ClearFilter(EspInstance* handle);
 
@@ -726,14 +727,37 @@ void         C_DestroyInstance(EspInstance* h) { delete h; }
 const char* C_GetVersion() { return Version.c_str(); }
 int          C_GetVersionLength() { return static_cast<int>(Version.length()); }
 
-void C_InitDefaultFilter(EspInstance* h)
+void C_InitFilter(EspInstance* h)
 {
     if (!h) return;
     delete h->Filter;
     h->Filter = new RecordFilter();
 }
 
-int C_SetDefaultFilter(EspInstance* h)
+int C_GetFilter(EspInstance* h, uint8_t* buffer, int bufferSize)
+{
+    if (!h || !h->Filter) return -1;
+    std::string result;
+    for (const auto& kv : h->Filter->CurrentConfig)
+    {
+        result += kv.first + ":";
+        for (size_t i = 0; i < kv.second.size(); i++)
+        {
+            if (i > 0) result += ",";
+            result += kv.second[i];
+        }
+        result += ";";
+    }
+    int len = static_cast<int>(result.size());
+    if (buffer && bufferSize > len)
+    {
+        std::memcpy(buffer, result.c_str(), len);
+        buffer[len] = 0;
+    }
+    return len;
+}
+
+int C_SetSkyrimFilter(EspInstance* h)
 {
     if (!h || !h->Filter) return -1;
     std::unordered_map<std::string, std::vector<std::string>> Config =
