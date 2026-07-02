@@ -10,6 +10,15 @@
 #endif
 #include "CharacterTracker.h"
 
+
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+#include <cstring>
+#include <string>
+#include <iostream>
+
 // ===== Record Filter Configuration =====
 class RecordFilter
 {
@@ -305,9 +314,40 @@ struct SubRecordData
 	}
 };
 
+
+struct TempResponseData
+{
+	uint32_t Emotion = 0;
+	std::string LineText = "";
+	std::vector<uint8_t> TrdtData;
+	std::vector<uint8_t> Nam1Data;
+};
+
+class DialResponseNode
+{
+public:
+	uint32_t ResponseID = 0;
+	uint32_t EmotionType = 0;
+	std::string ActorLine = "";
+	std::vector<uint8_t> TrdtData;
+	std::vector<uint8_t> Nam1Data;
+
+	DialResponseNode() {}
+	DialResponseNode(uint32_t resId, uint32_t emotion, const std::string& line, const std::vector<uint8_t>& trdt, const std::vector<uint8_t>& nam1)
+		: ResponseID(resId), EmotionType(emotion), ActorLine(line), TrdtData(trdt), Nam1Data(nam1) {
+	}
+};
+
+class LinkDIAL
+{
+public:
+	DialResponseNode Head;
+	std::vector<DialResponseNode> Links;
+};
+
 class EspRecord
 {
-	public:
+public:
 	std::string Sig;
 	uint32_t FormID;
 	uint32_t Flags;
@@ -325,6 +365,13 @@ class EspRecord
 	CharacterGender PendingGenderFromACBS = CharacterGender::Unknown;
 	bool            HasPendingACBS = false;
 
+	uint32_t ParentDialFormID = 0;
+	uint32_t PrevInfoFormID = 0;
+	bool HasDialContext = false;
+	LinkDIAL DialContext;
+	std::vector<TempResponseData> TempResponses_;
+	uint32_t G_CurrentDialFormID = 0;
+
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
 		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0), EditorID("")
 	{
@@ -340,6 +387,11 @@ class EspRecord
 		, HasEPFT(other.HasEPFT)
 		, Index(other.Index)
 		, EditorID(other.EditorID)
+		, ParentDialFormID(other.ParentDialFormID)
+		, PrevInfoFormID(other.PrevInfoFormID)
+		, HasDialContext(other.HasDialContext)
+		, DialContext(other.DialContext)
+		, TempResponses_(other.TempResponses_)
 	{
 
 	}
@@ -357,6 +409,11 @@ class EspRecord
 			HasEPFT = other.HasEPFT;
 			Index = other.Index;
 			EditorID = other.EditorID;
+			ParentDialFormID = other.ParentDialFormID;
+			PrevInfoFormID = other.PrevInfoFormID;
+			HasDialContext = other.HasDialContext;
+			DialContext = other.DialContext;
+			TempResponses_ = other.TempResponses_;
 		}
 		return *this;
 	}
@@ -382,7 +439,7 @@ class EspRecord
 		return false;
 	}
 
-	bool CanTranslateSub(ESP_HeuristicAnalysis* Analysis,const EspRecord& Parent, const SubRecordData& Item)
+	bool CanTranslateSub(ESP_HeuristicAnalysis* Analysis, const EspRecord& Parent, const SubRecordData& Item)
 	{
 		if (Item.Data.empty())
 			return false;
@@ -523,6 +580,7 @@ class EspRecord
 
 	void OnRecordBegin()
 	{
+		TempResponses_.clear();
 	}
 
 	std::string G_Name;
@@ -534,7 +592,7 @@ class EspRecord
 	std::vector<uint32_t> G_PendingFactions;
 	std::vector<uint32_t> G_PendingRaces;
 
-	void OnSubRecord(CharacterTracker* CurrentTracker,SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
+	void OnSubRecord(CharacterTracker* CurrentTracker, SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
 	{
 		if (!CurrentTracker)
 			return;
@@ -559,6 +617,24 @@ class EspRecord
 
 		if (Sig == "INFO")
 		{
+			if (Sub.Sig == "PNAM" && Size >= 4)
+			{
+				std::memcpy(&PrevInfoFormID, DataPtr, 4);
+			}
+			else if (Sub.Sig == "TRDT")
+			{
+				TempResponseData NewResp;
+				NewResp.TrdtData.assign(DataPtr, DataPtr + Size);
+				if (Size >= 4) std::memcpy(&NewResp.Emotion, DataPtr, 4);
+				TempResponses_.push_back(NewResp);
+			}
+			else if (Sub.Sig == "NAM1")
+			{
+				if (TempResponses_.empty()) TempResponses_.push_back(TempResponseData());
+				TempResponses_.back().Nam1Data.assign(DataPtr, DataPtr + Size);
+				TempResponses_.back().LineText = RawString::Parse(DataPtr, Size, RawString::String).ToUTF8String();
+			}
+
 			if (Sub.Sig == "ANAM" && Size >= 4)
 			{
 				uint32_t actor;
@@ -567,45 +643,65 @@ class EspRecord
 				G_PendingActors.push_back(actor);
 			}
 			else
-			if (Sub.Sig == "CTDA" && Size >= 12)
-			{
-				uint16_t FunctionID;
-				std::memcpy(&FunctionID, DataPtr + 4, 2);
-
-				uint32_t Param1;
-				std::memcpy(&Param1, DataPtr + 8, 4);
-
-				switch (FunctionID)
+				if (Sub.Sig == "CTDA" && Size >= 12)
 				{
-				case 72: // GetIsID
-					G_PendingActors.push_back(Param1);
-					break;
+					uint16_t FunctionID;
+					std::memcpy(&FunctionID, DataPtr + 4, 2);
 
-				case 97: // GetIsVoiceType
-					G_PendingVoiceTypes.push_back(Param1);
-					break;
+					uint32_t Param1;
+					std::memcpy(&Param1, DataPtr + 8, 4);
 
-				case 32: // GetInFaction
-					G_PendingFactions.push_back(Param1);
-					break;
+					switch (FunctionID)
+					{
+					case 72: // GetIsID
+						G_PendingActors.push_back(Param1);
+						break;
 
-				case 69: // GetIsRace
-					G_PendingRaces.push_back(Param1);
-					break;
+					case 97: // GetIsVoiceType
+						G_PendingVoiceTypes.push_back(Param1);
+						break;
+
+					case 32: // GetInFaction
+						G_PendingFactions.push_back(Param1);
+						break;
+
+					case 69: // GetIsRace
+						G_PendingRaces.push_back(Param1);
+						break;
+					}
 				}
-			}
 		}
 	}
 
 	void OnRecordFinished(
 		CharacterTracker* CurrentTracker,
-		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks, 
+		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredVoiceTypeLinks,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredFactionLinks,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredRaceLinks,
 
 		const char* Str, const uint8_t* DataPtr, size_t Size)
 	{
+		if (Sig == "INFO" && !TempResponses_.empty())
+		{
+			HasDialContext = true;
+
+			std::string FullText;
+			for (size_t i = 0; i < TempResponses_.size(); ++i)
+			{
+				FullText += TempResponses_[i].LineText;
+			}
+
+			DialContext.Head = DialResponseNode(
+				FormID,
+				TempResponses_[0].Emotion,
+				FullText,
+				TempResponses_[0].TrdtData,
+				TempResponses_[0].Nam1Data);
+
+			DialContext.Links.clear();
+		}
+
 		if (Sig == "NPC_")
 		{
 			std::string Name = G_Name;
@@ -746,6 +842,7 @@ class EspRecord
 			}
 		}
 
+		G_CurrentDialFormID = 0;
 		G_Name.clear();
 		G_VoiceType.clear();
 		G_Gender = CharacterGender::Unknown;
@@ -754,7 +851,7 @@ class EspRecord
 		G_PendingFactions.clear();
 		G_PendingRaces.clear();
 	}
-	void AddSubRecord(CharacterTracker* CurrentTracker,ESP_HeuristicAnalysis* Analysis,const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
+	void AddSubRecord(CharacterTracker* CurrentTracker, ESP_HeuristicAnalysis* Analysis, const char* Str, const uint8_t* DataPtr, size_t Size, RecordFilter& Filter)
 	{
 		SubRecordData Sub;
 		Sub.Sig = std::string(Str, 4);
@@ -794,7 +891,7 @@ class EspRecord
 				Sub.StringID = 0;
 			}
 
-			OnSubRecord(CurrentTracker,Sub, DataPtr, Size);
+			OnSubRecord(CurrentTracker, Sub, DataPtr, Size);
 		}
 
 		if (Sub.Sig == "EDID")
@@ -813,7 +910,7 @@ class EspRecord
 				SubRecords.push_back(Sub);
 			}
 			else
-				if (CanTranslateSub(Analysis,*this, Sub))
+				if (CanTranslateSub(Analysis, *this, Sub))
 				{
 					SubRecords.push_back(Sub);
 				}
@@ -874,7 +971,120 @@ public:
 	size_t GrupCount;
 	bool HasTES4Header;
 
+	std::unordered_map<uint32_t, std::vector<size_t>> DialToInfosMap;
+	std::unordered_map<uint32_t, std::vector<uint32_t>> InfoChildLinksMap;
+
 	EspData() : GrupCount(0), HasTES4Header(false) {}
+
+	void BuildDialTopologyIndex()
+	{
+		DialToInfosMap.clear();
+		InfoChildLinksMap.clear();
+
+		for (size_t i = 0; i < Records.size(); ++i)
+		{
+			if (Records[i].Sig == "INFO" && Records[i].ParentDialFormID != 0)
+			{
+				DialToInfosMap[Records[i].ParentDialFormID].push_back(i);
+			}
+		}
+
+		for (size_t i = 0; i < Records.size(); ++i)
+		{
+			if (Records[i].Sig == "INFO" && Records[i].PrevInfoFormID != 0)
+			{
+				InfoChildLinksMap[Records[i].PrevInfoFormID].push_back(Records[i].FormID);
+			}
+		}
+	}
+
+	LinkDIAL* GetDialContextByFormID(uint32_t FormID)
+	{
+		uint32_t TargetDialFormID = 0;
+
+		std::string InfoKey = std::to_string(FormID) + ":INFO";
+		auto ItInfo = RecordIndex.find(InfoKey);
+		if (ItInfo != RecordIndex.end())
+			TargetDialFormID = Records[ItInfo->second].ParentDialFormID;
+		else {
+			std::string DialKey = std::to_string(FormID) + ":DIAL";
+			if (RecordIndex.count(DialKey) || DialToInfosMap.count(FormID))
+				TargetDialFormID = FormID;
+		}
+
+		if (TargetDialFormID == 0) return nullptr;
+		auto ItMap = DialToInfosMap.find(TargetDialFormID);
+		if (ItMap == DialToInfosMap.end() || ItMap->second.empty()) return nullptr;
+
+		LinkDIAL* CombinedContext = new LinkDIAL();
+		std::unordered_set<uint32_t> Visited;
+
+		std::vector<uint8_t> emptyVec;
+
+		std::vector<DialResponseNode> UpstreamNodes;
+		uint32_t CurrentUp = FormID;
+		int upLimit = 5;
+		while (upLimit-- > 0) {
+			std::string upKey = std::to_string(CurrentUp) + ":INFO";
+			auto itUp = RecordIndex.find(upKey);
+			if (itUp != RecordIndex.end()) {
+				uint32_t prev = Records[itUp->second].PrevInfoFormID;
+				if (prev != 0 && Visited.find(prev) == Visited.end()) {
+					Visited.insert(prev);
+					CurrentUp = prev;
+					std::string pKey = std::to_string(prev) + ":INFO";
+					auto itRec = RecordIndex.find(pKey);
+					if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
+						
+						DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
+						UpstreamNodes.push_back(node);
+					}
+				}
+				else break;
+			}
+			else break;
+		}
+
+		for (auto it = UpstreamNodes.rbegin(); it != UpstreamNodes.rend(); ++it)
+			CombinedContext->Links.push_back(*it);
+
+		
+		auto ItCurr = RecordIndex.find(InfoKey);
+		if (ItCurr != RecordIndex.end() && Records[ItCurr->second].HasDialContext)
+			CombinedContext->Head = Records[ItCurr->second].DialContext.Head;
+
+		
+		uint32_t WalkFid = FormID;
+		Visited.insert(FormID);
+		int downLimit = 10;
+		while (downLimit-- > 0) {
+			auto itChild = InfoChildLinksMap.find(WalkFid);
+			if (itChild != InfoChildLinksMap.end() && !itChild->second.empty()) {
+				uint32_t NextFid = 0;
+				for (uint32_t ChildFid : itChild->second) {
+					if (Visited.find(ChildFid) == Visited.end()) {
+						NextFid = ChildFid;
+						break;
+					}
+				}
+				if (NextFid != 0) {
+					Visited.insert(NextFid);
+					WalkFid = NextFid;
+					std::string cKey = std::to_string(NextFid) + ":INFO";
+					auto itRec = RecordIndex.find(cKey);
+					if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
+						
+						DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
+						CombinedContext->Links.push_back(node);
+					}
+				}
+				else break;
+			}
+			else break;
+		}
+
+		return CombinedContext;
+	}
 
 	std::vector<EspRecord> SearchBySig(const std::string& ParentSig, const std::string& ChildSig = "") const
 	{

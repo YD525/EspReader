@@ -1,5 +1,4 @@
-﻿
-#include <fstream>
+﻿#include <fstream>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -85,7 +84,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.5.3";
+static const std::string Version = "1.5.5";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -147,7 +146,7 @@ bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
 // ============================================================
 //  Parsing helpers  (take EspInstance* instead of globals)
 // ============================================================
-void ParseSubRecords(EspInstance* Instance,const uint8_t* data, size_t dataSize, EspRecord& rec,
+void ParseSubRecords(EspInstance* Instance, const uint8_t* data, size_t dataSize, EspRecord& rec,
     const RecordFilter& filter, const char recordSig[4])
 {
     rec.OnRecordBegin();
@@ -159,7 +158,7 @@ void ParseSubRecords(EspInstance* Instance,const uint8_t* data, size_t dataSize,
         rec.AddSubRecord(
             Instance->CharTracker,
             Instance->TextValidator
-            ,sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
+            , sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
             const_cast<RecordFilter&>(filter));
         offset += sizeof(SubRecordHeader) + sub->Size;
     }
@@ -169,10 +168,10 @@ void ParseSubRecords(EspInstance* Instance,const uint8_t* data, size_t dataSize,
         &Instance->DeferredVoiceTypeLinks,
         &Instance->DeferredFactionLinks,
         &Instance->DeferredRaceLinks
-        ,recordSig, nullptr, 0);
+        , recordSig, nullptr, 0);
 }
 
-void ParseSubRecordsStream(EspInstance* Instance,std::ifstream& f, uint32_t recordSize, EspRecord& rec,
+void ParseSubRecordsStream(EspInstance* Instance, std::ifstream& f, uint32_t recordSize, EspRecord& rec,
     const RecordFilter& filter, const char recordSig[4])
 {
     rec.OnRecordBegin();
@@ -189,7 +188,7 @@ void ParseSubRecordsStream(EspInstance* Instance,std::ifstream& f, uint32_t reco
         rec.AddSubRecord(
             Instance->CharTracker,
             Instance->TextValidator
-            ,sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
+            , sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
     }
     rec.OnRecordFinished(
         Instance->CharTracker,
@@ -197,12 +196,12 @@ void ParseSubRecordsStream(EspInstance* Instance,std::ifstream& f, uint32_t reco
         &Instance->DeferredVoiceTypeLinks,
         &Instance->DeferredFactionLinks,
         &Instance->DeferredRaceLinks
-        ,recordSig, nullptr, 0);
+        , recordSig, nullptr, 0);
 }
 
 // ---- Instance-aware versions of the big parse functions ----
 
-static void ParseRecord_Inst(EspInstance* Instance,std::ifstream& f, const char Sig[4])
+static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char Sig[4])
 {
     RecordHeader hdr{};
     std::memcpy(hdr.Sig, Sig, 4);
@@ -221,15 +220,15 @@ static void ParseRecord_Inst(EspInstance* Instance,std::ifstream& f, const char 
         f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
         std::vector<uint8_t> decompressed;
         if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-            ParseSubRecords(Instance,decompressed.data(), decompressed.size(), rec, *Instance->Filter, hdr.Sig);
+            ParseSubRecords(Instance, decompressed.data(), decompressed.size(), rec, *Instance->Filter, hdr.Sig);
     }
-    else { ParseSubRecordsStream(Instance,f, hdr.DataSize, rec, *Instance->Filter, hdr.Sig); }
+    else { ParseSubRecordsStream(Instance, f, hdr.DataSize, rec, *Instance->Filter, hdr.Sig); }
     Instance->Data->AddRecord(rec, *Instance->Filter);
 }
 
-static void ParseCellGroup_Inst(EspInstance* Instance,std::ifstream& f,uint32_t groupSize);
+static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize);
 
-static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
+static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
 {
     GroupHeader gh{};
     std::memcpy(gh.Sig, "GRUP", 4);
@@ -238,11 +237,21 @@ static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
 
     Instance->Data->IncrementGrupCount();
 
-    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance,f,gh.Size - 24); return; }
+    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24); return; }
 
-    struct GS { uint32_t remaining; };
+    struct GS {
+        uint32_t remaining;
+        uint32_t currentDialFormID;
+    };
+
     std::stack<GS> groupStack;
-    groupStack.push({ gh.Size - 24 });
+
+    uint32_t initialDialFormID = 0;
+    if (gh.GroupType == 0)
+    {
+        std::memcpy(&initialDialFormID, gh.Label, 4);
+    }
+    groupStack.push({ gh.Size - 24, initialDialFormID });
 
     while (!groupStack.empty())
     {
@@ -258,10 +267,17 @@ static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
             if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
             Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
             if (gh.Size < 24 || gh.Size > state.remaining) { groupStack.pop(); continue; }
-            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance,f,gh.Size - 24); state.remaining -= gh.Size; continue; }
+            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24); state.remaining -= gh.Size; continue; }
             Instance->Data->IncrementGrupCount();
+
+            uint32_t nextDialFormID = state.currentDialFormID;
+            if (gh.GroupType == 0 || gh.GroupType == 1)
+            {
+                std::memcpy(&nextDialFormID, gh.Label, 4);
+            }
+
             state.remaining -= gh.Size;
-            groupStack.push({ gh.Size - 24 });
+            groupStack.push({ gh.Size - 24, nextDialFormID });
         }
         else
         {
@@ -272,9 +288,14 @@ static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
             uint32_t recordTotalSize = 24 + hdr.DataSize;
             if (recordTotalSize > state.remaining) { groupStack.pop(); continue; }
 
-            //CharacterTracker* CurrentTracker = Instance->CharTracker;
-
             EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
+
+            if (std::memcmp(hdr.Sig, "INFO", 4) == 0 && state.currentDialFormID != 0)
+            {
+                Record.ParentDialFormID = state.currentDialFormID;
+                Record.HasDialContext = true;
+            }
+
             if (IsCompressed(hdr))
             {
                 if (hdr.DataSize < 4) f.seekg(hdr.DataSize, std::ios::cur);
@@ -285,10 +306,10 @@ static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
                     f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
                     std::vector<uint8_t> decompressed;
                     if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(Instance,decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
+                        ParseSubRecords(Instance, decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
                 }
             }
-            else ParseSubRecordsStream(Instance,f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
+            else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
 
             if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter);
             state.remaining -= recordTotalSize;
@@ -296,7 +317,7 @@ static void ParseGroupIterative_Inst(EspInstance* Instance,std::ifstream& f)
     }
 }
 
-static void ParseCellGroup_Inst(EspInstance* Instance,std::ifstream& f,uint32_t groupSize)
+static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize)
 {
     uint32_t bytesRead = 0;
     while (bytesRead < groupSize && f.good())
@@ -317,7 +338,7 @@ static void ParseCellGroup_Inst(EspInstance* Instance,std::ifstream& f,uint32_t 
             if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
             Instance->Data->IncrementGrupCount();
             uint32_t contentSize = gh.Size - 24;
-            ParseCellGroup_Inst(Instance,f,contentSize);
+            ParseCellGroup_Inst(Instance, f, contentSize);
             bytesRead += contentSize;
         }
         else
@@ -343,10 +364,10 @@ static void ParseCellGroup_Inst(EspInstance* Instance,std::ifstream& f,uint32_t 
                     f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
                     std::vector<uint8_t> decompressed;
                     if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(Instance,decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
+                        ParseSubRecords(Instance, decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
                 }
             }
-            else ParseSubRecordsStream(Instance,f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
+            else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
 
             if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter);
             bytesRead += recordTotalSize;
@@ -717,6 +738,29 @@ extern "C"
     SSELex_API uint32_t C_GetCharacterLinkedRace(EspInstance* handle, int Index, int LinkIndex);
     SSELex_API int      C_GetCharacterLinkedVoiceTypeCount(EspInstance* handle, int Index);
     SSELex_API uint32_t C_GetCharacterLinkedVoiceType(EspInstance* handle, int Index, int LinkIndex);
+
+
+    struct C_DialResponseNode
+    {
+        uint32_t ResponseID;
+        uint32_t EmotionType;
+        char* ActorLine;
+        uint8_t* TrdtDataPtr;
+        uint32_t TrdtDataSize;
+        uint8_t* Nam1DataPtr;
+        uint32_t Nam1DataSize;
+    };
+
+    struct C_LinkDIAL
+    {
+        int HasData;
+        C_DialResponseNode Head;
+        C_DialResponseNode* Links;
+        uint32_t LinkCount;
+    };
+
+    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, uint32_t infoFormID);
+    SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
 }
 
 // ── Implementation ────────────────────────────────────────────
@@ -794,6 +838,88 @@ void C_ClearFilter(EspInstance* h)
     if (h && h->Filter) h->Filter->CurrentConfig.clear();
 }
 
+static void FillOwnedNode(C_DialResponseNode& Dst, const DialResponseNode& Src)
+{
+    Dst.ResponseID = Src.ResponseID;
+    Dst.EmotionType = Src.EmotionType;
+
+    Dst.ActorLine = nullptr;
+    if (!Src.ActorLine.empty())
+    {
+        size_t Len = Src.ActorLine.size();
+        Dst.ActorLine = new char[Len + 1];
+        std::memcpy(Dst.ActorLine, Src.ActorLine.c_str(), Len + 1);
+    }
+
+    Dst.TrdtDataSize = static_cast<uint32_t>(Src.TrdtData.size());
+    Dst.TrdtDataPtr = nullptr;
+    if (Dst.TrdtDataSize > 0)
+    {
+        Dst.TrdtDataPtr = new uint8_t[Dst.TrdtDataSize];
+        std::memcpy(Dst.TrdtDataPtr, Src.TrdtData.data(), Dst.TrdtDataSize);
+    }
+
+    Dst.Nam1DataSize = static_cast<uint32_t>(Src.Nam1Data.size());
+    Dst.Nam1DataPtr = nullptr;
+    if (Dst.Nam1DataSize > 0)
+    {
+        Dst.Nam1DataPtr = new uint8_t[Dst.Nam1DataSize];
+        std::memcpy(Dst.Nam1DataPtr, Src.Nam1Data.data(), Dst.Nam1DataSize);
+    }
+}
+
+static void FreeOwnedNode(C_DialResponseNode& Node)
+{
+    delete[] Node.ActorLine;   Node.ActorLine = nullptr;
+    delete[] Node.TrdtDataPtr; Node.TrdtDataPtr = nullptr;
+    delete[] Node.Nam1DataPtr; Node.Nam1DataPtr = nullptr;
+}
+
+C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, uint32_t infoFormID)
+{
+    C_LinkDIAL result = {};
+    if (!handle || !handle->Data) return result;
+
+    LinkDIAL* context = handle->Data->GetDialContextByFormID(infoFormID);
+    if (!context) return result;
+
+    result.HasData = 1;
+    FillOwnedNode(result.Head, context->Head);
+
+    result.LinkCount = static_cast<uint32_t>(context->Links.size());
+    if (result.LinkCount > 0)
+    {
+        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount]();
+        for (size_t i = 0; i < result.LinkCount; ++i)
+            FillOwnedNode(linkArray[i], context->Links[i]);
+        result.Links = linkArray;
+    }
+
+    // 修复内存泄漏：GetDialContextByFormID 里 new 出来的 LinkDIAL，
+    // 数据已经深拷贝进 result，这里用完立即释放，原来从没删过。
+    delete context;
+
+    return result;
+}
+
+void __stdcall C_FreeDialContext(C_LinkDIAL* context)
+{
+    if (!context) return;
+
+    FreeOwnedNode(context->Head);
+
+    if (context->Links)
+    {
+        for (uint32_t i = 0; i < context->LinkCount; ++i)
+            FreeOwnedNode(context->Links[i]);
+        delete[] context->Links;
+        context->Links = nullptr;
+        context->LinkCount = 0;
+    }
+
+    context->HasData = 0;
+}
+
 int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
 {
     if (!Instance) return -1;
@@ -827,17 +953,19 @@ int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
         if (!Stream.read(Sig, 4)) break;
 
         if (IsGRUP(Sig)) ParseGroupIterative_Inst(Instance, Stream);
-        else ParseRecord_Inst(Instance,Stream, Sig);
+        else ParseRecord_Inst(Instance, Stream, Sig);
     }
 
     FlushDeferredInfoLinks_Inst(Instance);
     Instance->CharacterCacheDirty = true;
 
+    Instance->Data->BuildDialTopologyIndex();
+
     return 0;
 }
 
-bool C_SaveEsp(EspInstance* h, const char* Utf8Path) 
-{ 
+bool C_SaveEsp(EspInstance* h, const char* Utf8Path)
+{
     return SaveEsp_Inst(h, Utf8Path);
 }
 
@@ -990,53 +1118,27 @@ BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
 
 int main()
 {
-    //SetConsoleOutputCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
 
-    //Init();
+    EspInstance* instance = C_CreateInstance();
+    if (!instance)
+    {
+        std::cerr << "Failed to create EspInstance\n";
+        return -1;
+    }
 
-    //C_InitDefaultFilter();
-    //C_SetDefaultFilter();
+    C_InitFilter(instance);
+    C_SetSkyrimFilter(instance);
 
-    //const wchar_t* EspPath = TEXT("C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp");
+    std::wcout << L"Starting ESP parsing...\n";
 
-    //std::cout << "Starting ESP parsing with filter...\n";
-    //if (TranslateFilter->IsEnabled())
-    //{
-    //	std::cout << "Filter is enabled - only specified records will be parsed.\n";
-    //}
-    //else {
-    //	std::cout << "Filter is disabled - all records will be parsed.\n";
-    //}
+    const wchar_t* espPath =
+        L"C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
 
-    //int state = ReadEsp(EspPath, *TranslateFilter);
+    int state = C_ReadEsp(instance, espPath);
 
-    //if (state == 0)
-    //{
-    //	std::cout << "Finished reading ESP.\n";
-    //	std::cout << "Total records parsed: " << Data->GetTotalCount() << "\n";
+    C_GetDialContext(instance, 84842513);
 
-    //	// Print statistics
-    //	Data->PrintStatistics();
-
-    //	//Test Query Cells
-    //	std::cout << "CellCount: " << Data->SearchBySig("CELL").size() << "\n\n";
-
-    //	GetCanTransCount();
-
-    //	void* P;
-    //	P = &EspRecord::GlobalCharacterTracker->Characters;
-
-    //	//Vaughn
-    //	vector<const CharacterRecord*> Test = EspRecord::GlobalCharacterTracker->SearchByName("Deneris");
-    //}
-    //else
-    //{
-    //	std::cerr << "Failed to read ESP\n";
-    //}
-
-    //Close();
-
-    //WaitForExit();
-
+    std::cout << "Done.\n";
     return 0;
 }
