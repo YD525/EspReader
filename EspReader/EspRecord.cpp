@@ -1023,26 +1023,23 @@ public:
 
 		std::vector<DialResponseNode> UpstreamNodes;
 		uint32_t CurrentUp = FormID;
-		int upLimit = 5;
-		while (upLimit-- > 0) {
+		while (true) {
 			std::string upKey = std::to_string(CurrentUp) + ":INFO";
 			auto itUp = RecordIndex.find(upKey);
-			if (itUp != RecordIndex.end()) {
-				uint32_t prev = Records[itUp->second].PrevInfoFormID;
-				if (prev != 0 && Visited.find(prev) == Visited.end()) {
-					Visited.insert(prev);
-					CurrentUp = prev;
-					std::string pKey = std::to_string(prev) + ":INFO";
-					auto itRec = RecordIndex.find(pKey);
-					if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
-						
-						DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
-						UpstreamNodes.push_back(node);
-					}
-				}
-				else break;
+			if (itUp == RecordIndex.end()) break;
+
+			uint32_t prev = Records[itUp->second].PrevInfoFormID;
+			if (prev == 0 || Visited.count(prev)) break;
+
+			Visited.insert(prev);
+			CurrentUp = prev;
+			std::string pKey = std::to_string(prev) + ":INFO";
+			auto itRec = RecordIndex.find(pKey);
+			if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
+				
+				DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
+				UpstreamNodes.push_back(node);
 			}
-			else break;
 		}
 
 		for (auto it = UpstreamNodes.rbegin(); it != UpstreamNodes.rend(); ++it)
@@ -1056,35 +1053,33 @@ public:
 		
 		uint32_t WalkFid = FormID;
 		Visited.insert(FormID);
-		int downLimit = 10;
-		while (downLimit-- > 0) {
+		while (true) {
 			auto itChild = InfoChildLinksMap.find(WalkFid);
-			if (itChild != InfoChildLinksMap.end() && !itChild->second.empty()) {
-				uint32_t NextFid = 0;
-				for (uint32_t ChildFid : itChild->second) {
-					if (Visited.find(ChildFid) == Visited.end()) {
-						NextFid = ChildFid;
-						break;
-					}
+			if (itChild == InfoChildLinksMap.end() || itChild->second.empty()) break;
+
+			uint32_t NextFid = 0;
+			for (uint32_t ChildFid : itChild->second) {
+				if (Visited.find(ChildFid) == Visited.end()) {
+					NextFid = ChildFid;
+					break;
 				}
-				if (NextFid != 0) {
-					Visited.insert(NextFid);
-					WalkFid = NextFid;
-					std::string cKey = std::to_string(NextFid) + ":INFO";
-					auto itRec = RecordIndex.find(cKey);
-					if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
-						
-						DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
-						CombinedContext->Links.push_back(node);
-					}
-				}
-				else break;
 			}
-			else break;
+			if (NextFid == 0) break;
+
+			Visited.insert(NextFid);
+			WalkFid = NextFid;
+			std::string cKey = std::to_string(NextFid) + ":INFO";
+			auto itRec = RecordIndex.find(cKey);
+			if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
+				
+				DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
+				CombinedContext->Links.push_back(node);
+			}
 		}
 
 		return CombinedContext;
 	}
+
 
 	std::vector<EspRecord> SearchBySig(const std::string& ParentSig, const std::string& ChildSig = "") const
 	{

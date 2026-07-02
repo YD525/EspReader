@@ -895,8 +895,6 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, uint32_t infoFormID)
         result.Links = linkArray;
     }
 
-    // 修复内存泄漏：GetDialContextByFormID 里 new 出来的 LinkDIAL，
-    // 数据已经深拷贝进 result，这里用完立即释放，原来从没删过。
     delete context;
 
     return result;
