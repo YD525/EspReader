@@ -1004,80 +1004,143 @@ public:
 
 		std::string InfoKey = std::to_string(FormID) + ":INFO";
 		auto ItInfo = RecordIndex.find(InfoKey);
+
 		if (ItInfo != RecordIndex.end())
+		{
 			TargetDialFormID = Records[ItInfo->second].ParentDialFormID;
-		else {
+		}
+		else
+		{
 			std::string DialKey = std::to_string(FormID) + ":DIAL";
 			if (RecordIndex.count(DialKey) || DialToInfosMap.count(FormID))
 				TargetDialFormID = FormID;
 		}
 
-		if (TargetDialFormID == 0) return nullptr;
+		if (TargetDialFormID == 0)
+			return nullptr;
+
 		auto ItMap = DialToInfosMap.find(TargetDialFormID);
-		if (ItMap == DialToInfosMap.end() || ItMap->second.empty()) return nullptr;
+		if (ItMap == DialToInfosMap.end() || ItMap->second.empty())
+			return nullptr;
 
 		LinkDIAL* CombinedContext = new LinkDIAL();
-		std::unordered_set<uint32_t> Visited;
 
+		std::unordered_set<uint32_t> Visited;
 		std::vector<uint8_t> emptyVec;
 
+		int AnchorIndex = -1;
+
 		std::vector<DialResponseNode> UpstreamNodes;
+
 		uint32_t CurrentUp = FormID;
-		while (true) {
+
+		while (true)
+		{
 			std::string upKey = std::to_string(CurrentUp) + ":INFO";
 			auto itUp = RecordIndex.find(upKey);
-			if (itUp == RecordIndex.end()) break;
+			if (itUp == RecordIndex.end())
+				break;
 
 			uint32_t prev = Records[itUp->second].PrevInfoFormID;
-			if (prev == 0 || Visited.count(prev)) break;
+
+			if (prev == 0 || Visited.count(prev))
+				break;
 
 			Visited.insert(prev);
 			CurrentUp = prev;
+
 			std::string pKey = std::to_string(prev) + ":INFO";
 			auto itRec = RecordIndex.find(pKey);
-			if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
 
-				DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
+			if (itRec != RecordIndex.end() &&
+				Records[itRec->second].HasDialContext)
+			{
+				DialResponseNode node;
+				node.ResponseID = prev;
+				node.ActorLine = Records[itRec->second].DialContext.Head.ActorLine;
+
 				UpstreamNodes.push_back(node);
 			}
 		}
 
 		for (auto it = UpstreamNodes.rbegin(); it != UpstreamNodes.rend(); ++it)
+		{
 			CombinedContext->Links.push_back(*it);
-
+		}
 
 		auto ItCurr = RecordIndex.find(InfoKey);
-		if (ItCurr != RecordIndex.end() && Records[ItCurr->second].HasDialContext)
+
+		if (ItCurr == RecordIndex.end() ||
+			!Records[ItCurr->second].HasDialContext)
 		{
-			CombinedContext->Head = Records[ItCurr->second].DialContext.Head;
-			CombinedContext->Links.push_back(Records[ItCurr->second].DialContext.Head);
+			return nullptr;
 		}
+
+		DialResponseNode anchor;
+		anchor.ResponseID = FormID;
+		anchor.ActorLine = Records[ItCurr->second].DialContext.Head.ActorLine;
+
+		AnchorIndex = (int)CombinedContext->Links.size();
+		CombinedContext->Links.push_back(anchor);
+
+		CombinedContext->Head = anchor;
 
 
 		uint32_t WalkFid = FormID;
 		Visited.insert(FormID);
-		while (true) {
+
+		while (true)
+		{
 			auto itChild = InfoChildLinksMap.find(WalkFid);
-			if (itChild == InfoChildLinksMap.end() || itChild->second.empty()) break;
+			if (itChild == InfoChildLinksMap.end() ||
+				itChild->second.empty())
+				break;
 
 			uint32_t NextFid = 0;
-			for (uint32_t ChildFid : itChild->second) {
-				if (Visited.find(ChildFid) == Visited.end()) {
+
+			for (uint32_t ChildFid : itChild->second)
+			{
+				if (!Visited.count(ChildFid))
+				{
 					NextFid = ChildFid;
 					break;
 				}
 			}
-			if (NextFid == 0) break;
+
+			if (NextFid == 0)
+				break;
 
 			Visited.insert(NextFid);
 			WalkFid = NextFid;
+
 			std::string cKey = std::to_string(NextFid) + ":INFO";
 			auto itRec = RecordIndex.find(cKey);
-			if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
 
-				DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
+			if (itRec != RecordIndex.end() &&
+				Records[itRec->second].HasDialContext)
+			{
+				DialResponseNode node;
+				node.ResponseID = NextFid;
+				node.ActorLine = Records[itRec->second].DialContext.Head.ActorLine;
+
 				CombinedContext->Links.push_back(node);
 			}
+		}
+
+		bool foundAnchor = false;
+		for (auto& n : CombinedContext->Links)
+		{
+			if (n.ResponseID == FormID)
+			{
+				foundAnchor = true;
+				break;
+			}
+		}
+
+		if (!foundAnchor)
+		{
+			delete CombinedContext;
+			return nullptr;
 		}
 
 		return CombinedContext;
