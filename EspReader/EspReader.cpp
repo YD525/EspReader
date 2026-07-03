@@ -842,13 +842,11 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recor
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    // 调用最新的三维坐标定位方法
     LinkDIAL* context = handle->Data->GetDialContextByIndex(isCell, recordOffset, subOffset);
     if (!context) return result;
 
     result.HasData = 1;
 
-    // 告别 FillOwnedNode，直接值拷贝 Head
     result.Head.ResponseID = context->Head.ResponseID;
     result.Head.EmotionType = context->Head.EmotionType;
     result.Head.RecordOffset = context->Head.RecordOffset;
@@ -857,12 +855,10 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recor
     result.LinkCount = static_cast<uint32_t>(context->Links.size());
     if (result.LinkCount > 0)
     {
-        // 一次性分配数组内存
         C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount]();
 
         for (size_t i = 0; i < result.LinkCount; ++i)
         {
-            // 告别 FillOwnedNode，直接值拷贝 Links
             linkArray[i].ResponseID = context->Links[i].ResponseID;
             linkArray[i].EmotionType = context->Links[i].EmotionType;
             linkArray[i].RecordOffset = context->Links[i].RecordOffset;
@@ -1107,7 +1103,7 @@ int main()
 
     int state = C_ReadEsp(instance, espPath);
 
-    //C_GetDialContext(instance, 84842513);
+    C_GetDialContext(instance,0,2,0);
 
     std::cout << "Done.\n";
     return 0;

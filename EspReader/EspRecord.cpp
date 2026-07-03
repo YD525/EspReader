@@ -155,6 +155,7 @@ inline bool IsLikelyUTF8(const uint8_t* Data, size_t Size)
 	return true;
 }
 
+//https://github.com/Cutleast/sse-plugin-interface/blob/master/src%2Fsse_plugin_interface%2Fdatatypes.py#L209-L233
 class RawString
 {
 public:
@@ -326,7 +327,6 @@ public:
 	uint32_t ResponseID = 0;
 	uint32_t EmotionType = 0;
 
-	// 精准定位主键：替代原本沉重的字符串和二进制数据
 	int RecordOffset = 0;
 	int SubOffset = 0;
 
@@ -367,7 +367,6 @@ public:
 	uint32_t PrevInfoFormID = 0;
 	bool HasDialContext = false;
 
-	// 把原来的 LinkDIAL DialContext 替换为多节点的 LocalDialogues
 	std::vector<DialResponseNode> LocalDialogues;
 	std::vector<TempResponseData> TempResponses_;
 	uint32_t G_CurrentDialFormID = 0;
@@ -1024,7 +1023,6 @@ public:
 		if (RecordOffset < 0 || RecordOffset >= (int)BaseRecords.size())
 			return nullptr;
 
-		// 对话序列仅对主记录（INFO/DIAL）生效，若是Cell则无法生成
 		if (IsCell == 1)
 			return nullptr;
 
@@ -1032,7 +1030,6 @@ public:
 		if (TargetRec.Sig != "INFO" && TargetRec.Sig != "DIAL")
 			return nullptr;
 
-		// 寻找匹配指定 SubOffset 真实下标的子对话节点
 		DialResponseNode anchorNode;
 		bool foundAnchor = false;
 		for (const auto& d : TargetRec.LocalDialogues) {
@@ -1351,7 +1348,6 @@ public:
 			std::string EditorID = Rec.EditorID;
 			if (!EditorID.empty())
 			{
-				// 恢复成你原来的逻辑，用 EditorID 做 key
 				CellByEditorID[EditorID] = CellIndex;
 			}
 		}
