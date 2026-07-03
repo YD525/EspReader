@@ -154,7 +154,7 @@ inline bool IsLikelyUTF8(const uint8_t* Data, size_t Size)
 	}
 	return true;
 }
-//https://github.com/Cutleast/sse-plugin-interface/blob/master/src%2Fsse_plugin_interface%2Fdatatypes.py#L209-L233
+
 class RawString
 {
 public:
@@ -314,13 +314,10 @@ struct SubRecordData
 	}
 };
 
-
 struct TempResponseData
 {
 	uint32_t Emotion = 0;
-	std::string LineText = "";
-	std::vector<uint8_t> TrdtData;
-	std::vector<uint8_t> Nam1Data;
+	int OriginalSubIndex = -1;
 };
 
 class DialResponseNode
@@ -328,13 +325,14 @@ class DialResponseNode
 public:
 	uint32_t ResponseID = 0;
 	uint32_t EmotionType = 0;
-	std::string ActorLine = "";
-	std::vector<uint8_t> TrdtData;
-	std::vector<uint8_t> Nam1Data;
+
+	// 精准定位主键：替代原本沉重的字符串和二进制数据
+	int RecordOffset = 0;
+	int SubOffset = 0;
 
 	DialResponseNode() {}
-	DialResponseNode(uint32_t resId, uint32_t emotion, const std::string& line, const std::vector<uint8_t>& trdt, const std::vector<uint8_t>& nam1)
-		: ResponseID(resId), EmotionType(emotion), ActorLine(line), TrdtData(trdt), Nam1Data(nam1) {
+	DialResponseNode(uint32_t resId, uint32_t emotion, int recOff = 0, int subOff = 0)
+		: ResponseID(resId), EmotionType(emotion), RecordOffset(recOff), SubOffset(subOff) {
 	}
 };
 
@@ -368,7 +366,9 @@ public:
 	uint32_t ParentDialFormID = 0;
 	uint32_t PrevInfoFormID = 0;
 	bool HasDialContext = false;
-	LinkDIAL DialContext;
+
+	// 把原来的 LinkDIAL DialContext 替换为多节点的 LocalDialogues
+	std::vector<DialResponseNode> LocalDialogues;
 	std::vector<TempResponseData> TempResponses_;
 	uint32_t G_CurrentDialFormID = 0;
 
@@ -390,7 +390,7 @@ public:
 		, ParentDialFormID(other.ParentDialFormID)
 		, PrevInfoFormID(other.PrevInfoFormID)
 		, HasDialContext(other.HasDialContext)
-		, DialContext(other.DialContext)
+		, LocalDialogues(other.LocalDialogues)
 		, TempResponses_(other.TempResponses_)
 	{
 
@@ -412,7 +412,7 @@ public:
 			ParentDialFormID = other.ParentDialFormID;
 			PrevInfoFormID = other.PrevInfoFormID;
 			HasDialContext = other.HasDialContext;
-			DialContext = other.DialContext;
+			LocalDialogues = other.LocalDialogues;
 			TempResponses_ = other.TempResponses_;
 		}
 		return *this;
@@ -581,6 +581,7 @@ public:
 	void OnRecordBegin()
 	{
 		TempResponses_.clear();
+		LocalDialogues.clear();
 	}
 
 	std::string G_Name;
@@ -624,15 +625,16 @@ public:
 			else if (Sub.Sig == "TRDT")
 			{
 				TempResponseData NewResp;
-				NewResp.TrdtData.assign(DataPtr, DataPtr + Size);
 				if (Size >= 4) std::memcpy(&NewResp.Emotion, DataPtr, 4);
 				TempResponses_.push_back(NewResp);
 			}
 			else if (Sub.Sig == "NAM1")
 			{
-				if (TempResponses_.empty()) TempResponses_.push_back(TempResponseData());
-				TempResponses_.back().Nam1Data.assign(DataPtr, DataPtr + Size);
-				TempResponses_.back().LineText = RawString::Parse(DataPtr, Size, RawString::String).ToUTF8String();
+				if (TempResponses_.empty()) {
+					TempResponseData dummy;
+					TempResponses_.push_back(dummy);
+				}
+				TempResponses_.back().OriginalSubIndex = static_cast<int>(SubRecords.size());
 			}
 
 			if (Sub.Sig == "ANAM" && Size >= 4)
@@ -686,20 +688,16 @@ public:
 		{
 			HasDialContext = true;
 
-			std::string FullText;
 			for (size_t i = 0; i < TempResponses_.size(); ++i)
 			{
-				FullText += TempResponses_[i].LineText;
+				DialResponseNode node(
+					FormID,
+					TempResponses_[i].Emotion,
+					this->Index,
+					TempResponses_[i].OriginalSubIndex
+				);
+				LocalDialogues.push_back(node);
 			}
-
-			DialContext.Head = DialResponseNode(
-				FormID,
-				TempResponses_[0].Emotion,
-				FullText,
-				TempResponses_[0].TrdtData,
-				TempResponses_[0].Nam1Data);
-
-			DialContext.Links.clear();
 		}
 
 		if (Sig == "NPC_")
@@ -971,8 +969,8 @@ public:
 	size_t GrupCount;
 	bool HasTES4Header;
 
-	std::unordered_map<uint32_t, std::vector<size_t>> DialToInfosMap;
-	std::unordered_map<uint32_t, std::vector<uint32_t>> InfoChildLinksMap;
+	std::unordered_map<size_t, std::vector<size_t>> DialToInfosMap;
+	std::unordered_map<size_t, std::vector<size_t>> InfoChildLinksMap;
 
 	EspData() : GrupCount(0), HasTES4Header(false) {}
 
@@ -981,85 +979,108 @@ public:
 		DialToInfosMap.clear();
 		InfoChildLinksMap.clear();
 
+		std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
+		std::unordered_map<uint32_t, size_t> DialFormIDToIdx;
 		for (size_t i = 0; i < Records.size(); ++i)
 		{
-			if (Records[i].Sig == "INFO" && Records[i].ParentDialFormID != 0)
-			{
-				DialToInfosMap[Records[i].ParentDialFormID].push_back(i);
+			if (Records[i].Sig == "INFO") {
+				InfoFormIDToIdx[Records[i].FormID] = i;
+				for (auto& dialogue : Records[i].LocalDialogues) {
+					dialogue.RecordOffset = static_cast<int>(i);
+				}
+			}
+			else if (Records[i].Sig == "DIAL") {
+				DialFormIDToIdx[Records[i].FormID] = i;
 			}
 		}
 
 		for (size_t i = 0; i < Records.size(); ++i)
 		{
-			if (Records[i].Sig == "INFO" && Records[i].PrevInfoFormID != 0)
+			if (Records[i].Sig == "INFO")
 			{
-				InfoChildLinksMap[Records[i].PrevInfoFormID].push_back(Records[i].FormID);
+				if (Records[i].ParentDialFormID != 0)
+				{
+					auto it = DialFormIDToIdx.find(Records[i].ParentDialFormID);
+					if (it != DialFormIDToIdx.end())
+					{
+						DialToInfosMap[it->second].push_back(i);
+					}
+				}
+				if (Records[i].PrevInfoFormID != 0)
+				{
+					auto it = InfoFormIDToIdx.find(Records[i].PrevInfoFormID);
+					if (it != InfoFormIDToIdx.end())
+					{
+						InfoChildLinksMap[it->second].push_back(i);
+					}
+				}
 			}
 		}
 	}
 
-	LinkDIAL* GetDialContextByFormID(uint32_t FormID)
+	LinkDIAL* GetDialContextByIndex(int IsCell, int RecordOffset, int SubOffset)
 	{
-		uint32_t TargetDialFormID = 0;
-
-		std::string InfoKey = std::to_string(FormID) + ":INFO";
-		auto ItInfo = RecordIndex.find(InfoKey);
-
-		if (ItInfo != RecordIndex.end())
-		{
-			TargetDialFormID = Records[ItInfo->second].ParentDialFormID;
-		}
-		else
-		{
-			std::string DialKey = std::to_string(FormID) + ":DIAL";
-			if (RecordIndex.count(DialKey) || DialToInfosMap.count(FormID))
-				TargetDialFormID = FormID;
-		}
-
-		if (TargetDialFormID == 0)
+		std::vector<EspRecord>& BaseRecords = (IsCell == 1) ? CellRecords : Records;
+		if (RecordOffset < 0 || RecordOffset >= (int)BaseRecords.size())
 			return nullptr;
 
-		auto ItMap = DialToInfosMap.find(TargetDialFormID);
-		if (ItMap == DialToInfosMap.end() || ItMap->second.empty())
+		// 对话序列仅对主记录（INFO/DIAL）生效，若是Cell则无法生成
+		if (IsCell == 1)
 			return nullptr;
+
+		EspRecord& TargetRec = BaseRecords[RecordOffset];
+		if (TargetRec.Sig != "INFO" && TargetRec.Sig != "DIAL")
+			return nullptr;
+
+		// 寻找匹配指定 SubOffset 真实下标的子对话节点
+		DialResponseNode anchorNode;
+		bool foundAnchor = false;
+		for (const auto& d : TargetRec.LocalDialogues) {
+			if (d.SubOffset == SubOffset) {
+				anchorNode = d;
+				foundAnchor = true;
+				break;
+			}
+		}
+
+		if (!foundAnchor)
+			return nullptr;
+
+		std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
+		for (size_t i = 0; i < Records.size(); ++i)
+		{
+			if (Records[i].Sig == "INFO")
+				InfoFormIDToIdx[Records[i].FormID] = i;
+		}
 
 		LinkDIAL* CombinedContext = new LinkDIAL();
-
-		std::unordered_set<uint32_t> Visited;
-		std::vector<uint8_t> emptyVec;
-
-		int AnchorIndex = -1;
-
+		std::unordered_set<size_t> VisitedRecords;
 		std::vector<DialResponseNode> UpstreamNodes;
 
-		uint32_t CurrentUp = FormID;
+		size_t CurrentUpIdx = (size_t)RecordOffset;
 
 		while (true)
 		{
-			std::string upKey = std::to_string(CurrentUp) + ":INFO";
-			auto itUp = RecordIndex.find(upKey);
-			if (itUp == RecordIndex.end())
+			uint32_t prevFormID = Records[CurrentUpIdx].PrevInfoFormID;
+			if (prevFormID == 0)
 				break;
 
-			uint32_t prev = Records[itUp->second].PrevInfoFormID;
-
-			if (prev == 0 || Visited.count(prev))
+			auto itPrev = InfoFormIDToIdx.find(prevFormID);
+			if (itPrev == InfoFormIDToIdx.end())
 				break;
 
-			Visited.insert(prev);
-			CurrentUp = prev;
+			size_t prevIdx = itPrev->second;
+			if (VisitedRecords.count(prevIdx))
+				break;
 
-			std::string pKey = std::to_string(prev) + ":INFO";
-			auto itRec = RecordIndex.find(pKey);
+			VisitedRecords.insert(prevIdx);
+			CurrentUpIdx = prevIdx;
 
-			if (itRec != RecordIndex.end() &&
-				Records[itRec->second].HasDialContext)
+			if (Records[prevIdx].HasDialContext)
 			{
-				DialResponseNode node;
-				node.ResponseID = prev;
-				node.ActorLine = Records[itRec->second].DialContext.Head.ActorLine;
-
-				UpstreamNodes.push_back(node);
+				for (auto itSub = Records[prevIdx].LocalDialogues.rbegin(); itSub != Records[prevIdx].LocalDialogues.rend(); ++itSub) {
+					UpstreamNodes.push_back(*itSub);
+				}
 			}
 		}
 
@@ -1068,79 +1089,52 @@ public:
 			CombinedContext->Links.push_back(*it);
 		}
 
-		auto ItCurr = RecordIndex.find(InfoKey);
-
-		if (ItCurr == RecordIndex.end() ||
-			!Records[ItCurr->second].HasDialContext)
-		{
-			return nullptr;
+		for (const auto& d : TargetRec.LocalDialogues) {
+			if (d.SubOffset < SubOffset) {
+				CombinedContext->Links.push_back(d);
+			}
 		}
 
-		DialResponseNode anchor;
-		anchor.ResponseID = FormID;
-		anchor.ActorLine = Records[ItCurr->second].DialContext.Head.ActorLine;
+		CombinedContext->Head = anchorNode;
+		CombinedContext->Links.push_back(anchorNode);
 
-		AnchorIndex = (int)CombinedContext->Links.size();
-		CombinedContext->Links.push_back(anchor);
+		for (const auto& d : TargetRec.LocalDialogues) {
+			if (d.SubOffset > SubOffset) {
+				CombinedContext->Links.push_back(d);
+			}
+		}
 
-		CombinedContext->Head = anchor;
-
-
-		uint32_t WalkFid = FormID;
-		Visited.insert(FormID);
+		size_t WalkIdx = (size_t)RecordOffset;
+		VisitedRecords.insert((size_t)RecordOffset);
 
 		while (true)
 		{
-			auto itChild = InfoChildLinksMap.find(WalkFid);
-			if (itChild == InfoChildLinksMap.end() ||
-				itChild->second.empty())
+			auto itChild = InfoChildLinksMap.find(WalkIdx);
+			if (itChild == InfoChildLinksMap.end() || itChild->second.empty())
 				break;
 
-			uint32_t NextFid = 0;
-
-			for (uint32_t ChildFid : itChild->second)
+			size_t NextIdx = 0;
+			for (size_t ChildIdx : itChild->second)
 			{
-				if (!Visited.count(ChildFid))
+				if (!VisitedRecords.count(ChildIdx))
 				{
-					NextFid = ChildFid;
+					NextIdx = ChildIdx;
 					break;
 				}
 			}
 
-			if (NextFid == 0)
+			if (NextIdx == 0)
 				break;
 
-			Visited.insert(NextFid);
-			WalkFid = NextFid;
+			VisitedRecords.insert(NextIdx);
+			WalkIdx = NextIdx;
 
-			std::string cKey = std::to_string(NextFid) + ":INFO";
-			auto itRec = RecordIndex.find(cKey);
-
-			if (itRec != RecordIndex.end() &&
-				Records[itRec->second].HasDialContext)
+			if (Records[NextIdx].HasDialContext)
 			{
-				DialResponseNode node;
-				node.ResponseID = NextFid;
-				node.ActorLine = Records[itRec->second].DialContext.Head.ActorLine;
-
-				CombinedContext->Links.push_back(node);
+				for (const auto& d : Records[NextIdx].LocalDialogues) {
+					CombinedContext->Links.push_back(d);
+				}
 			}
-		}
-
-		bool foundAnchor = false;
-		for (auto& n : CombinedContext->Links)
-		{
-			if (n.ResponseID == FormID)
-			{
-				foundAnchor = true;
-				break;
-			}
-		}
-
-		if (!foundAnchor)
-		{
-			delete CombinedContext;
-			return nullptr;
 		}
 
 		return CombinedContext;
@@ -1357,6 +1351,7 @@ public:
 			std::string EditorID = Rec.EditorID;
 			if (!EditorID.empty())
 			{
+				// 恢复成你原来的逻辑，用 EditorID 做 key
 				CellByEditorID[EditorID] = CellIndex;
 			}
 		}

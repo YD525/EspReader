@@ -744,22 +744,19 @@ extern "C"
     {
         uint32_t ResponseID;
         uint32_t EmotionType;
-        char* ActorLine;
-        uint8_t* TrdtDataPtr;
-        uint32_t TrdtDataSize;
-        uint8_t* Nam1DataPtr;
-        uint32_t Nam1DataSize;
+        int RecordOffset;  
+        int SubOffset;     
     };
 
     struct C_LinkDIAL
     {
         int HasData;
         C_DialResponseNode Head;
-        C_DialResponseNode* Links;
+        C_DialResponseNode* Links; 
         uint32_t LinkCount;
     };
 
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, uint32_t infoFormID);
+    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recordOffset, int subOffset);
     SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
 }
 
@@ -838,60 +835,39 @@ void C_ClearFilter(EspInstance* h)
     if (h && h->Filter) h->Filter->CurrentConfig.clear();
 }
 
-static void FillOwnedNode(C_DialResponseNode& Dst, const DialResponseNode& Src)
-{
-    Dst.ResponseID = Src.ResponseID;
-    Dst.EmotionType = Src.EmotionType;
 
-    Dst.ActorLine = nullptr;
-    if (!Src.ActorLine.empty())
-    {
-        size_t Len = Src.ActorLine.size();
-        Dst.ActorLine = new char[Len + 1];
-        std::memcpy(Dst.ActorLine, Src.ActorLine.c_str(), Len + 1);
-    }
 
-    Dst.TrdtDataSize = static_cast<uint32_t>(Src.TrdtData.size());
-    Dst.TrdtDataPtr = nullptr;
-    if (Dst.TrdtDataSize > 0)
-    {
-        Dst.TrdtDataPtr = new uint8_t[Dst.TrdtDataSize];
-        std::memcpy(Dst.TrdtDataPtr, Src.TrdtData.data(), Dst.TrdtDataSize);
-    }
-
-    Dst.Nam1DataSize = static_cast<uint32_t>(Src.Nam1Data.size());
-    Dst.Nam1DataPtr = nullptr;
-    if (Dst.Nam1DataSize > 0)
-    {
-        Dst.Nam1DataPtr = new uint8_t[Dst.Nam1DataSize];
-        std::memcpy(Dst.Nam1DataPtr, Src.Nam1Data.data(), Dst.Nam1DataSize);
-    }
-}
-
-static void FreeOwnedNode(C_DialResponseNode& Node)
-{
-    delete[] Node.ActorLine;   Node.ActorLine = nullptr;
-    delete[] Node.TrdtDataPtr; Node.TrdtDataPtr = nullptr;
-    delete[] Node.Nam1DataPtr; Node.Nam1DataPtr = nullptr;
-}
-
-C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, uint32_t infoFormID)
+C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recordOffset, int subOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByFormID(infoFormID);
+    // 调用最新的三维坐标定位方法
+    LinkDIAL* context = handle->Data->GetDialContextByIndex(isCell, recordOffset, subOffset);
     if (!context) return result;
 
     result.HasData = 1;
-    FillOwnedNode(result.Head, context->Head);
+
+    // 告别 FillOwnedNode，直接值拷贝 Head
+    result.Head.ResponseID = context->Head.ResponseID;
+    result.Head.EmotionType = context->Head.EmotionType;
+    result.Head.RecordOffset = context->Head.RecordOffset;
+    result.Head.SubOffset = context->Head.SubOffset;
 
     result.LinkCount = static_cast<uint32_t>(context->Links.size());
     if (result.LinkCount > 0)
     {
+        // 一次性分配数组内存
         C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount]();
+
         for (size_t i = 0; i < result.LinkCount; ++i)
-            FillOwnedNode(linkArray[i], context->Links[i]);
+        {
+            // 告别 FillOwnedNode，直接值拷贝 Links
+            linkArray[i].ResponseID = context->Links[i].ResponseID;
+            linkArray[i].EmotionType = context->Links[i].EmotionType;
+            linkArray[i].RecordOffset = context->Links[i].RecordOffset;
+            linkArray[i].SubOffset = context->Links[i].SubOffset;
+        }
         result.Links = linkArray;
     }
 
@@ -904,12 +880,8 @@ void __stdcall C_FreeDialContext(C_LinkDIAL* context)
 {
     if (!context) return;
 
-    FreeOwnedNode(context->Head);
-
     if (context->Links)
     {
-        for (uint32_t i = 0; i < context->LinkCount; ++i)
-            FreeOwnedNode(context->Links[i]);
         delete[] context->Links;
         context->Links = nullptr;
         context->LinkCount = 0;
@@ -1135,7 +1107,7 @@ int main()
 
     int state = C_ReadEsp(instance, espPath);
 
-    C_GetDialContext(instance, 84842513);
+    //C_GetDialContext(instance, 84842513);
 
     std::cout << "Done.\n";
     return 0;
