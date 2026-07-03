@@ -10,7 +10,6 @@
 #endif
 #include "CharacterTracker.h"
 
-
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -363,13 +362,12 @@ public:
 	CharacterGender PendingGenderFromACBS = CharacterGender::Unknown;
 	bool            HasPendingACBS = false;
 
-	uint32_t ParentDialFormID = 0;
+	// --- Dialogue tracking (only PrevInfoFormID is used for linking, no ParentDialFormID) ---
 	uint32_t PrevInfoFormID = 0;
 	bool HasDialContext = false;
 
 	std::vector<DialResponseNode> LocalDialogues;
 	std::vector<TempResponseData> TempResponses_;
-	uint32_t G_CurrentDialFormID = 0;
 
 	EspRecord(const char* S, uint32_t FID, uint32_t FL)
 		: Sig(S, 4), FormID(FID), Flags(FL), LastEPFT(0), HasEPFT(false), Index(0), EditorID("")
@@ -386,7 +384,6 @@ public:
 		, HasEPFT(other.HasEPFT)
 		, Index(other.Index)
 		, EditorID(other.EditorID)
-		, ParentDialFormID(other.ParentDialFormID)
 		, PrevInfoFormID(other.PrevInfoFormID)
 		, HasDialContext(other.HasDialContext)
 		, LocalDialogues(other.LocalDialogues)
@@ -408,7 +405,6 @@ public:
 			HasEPFT = other.HasEPFT;
 			Index = other.Index;
 			EditorID = other.EditorID;
-			ParentDialFormID = other.ParentDialFormID;
 			PrevInfoFormID = other.PrevInfoFormID;
 			HasDialContext = other.HasDialContext;
 			LocalDialogues = other.LocalDialogues;
@@ -839,7 +835,6 @@ public:
 			}
 		}
 
-		G_CurrentDialFormID = 0;
 		G_Name.clear();
 		G_VoiceType.clear();
 		G_Gender = CharacterGender::Unknown;
@@ -968,50 +963,35 @@ public:
 	size_t GrupCount;
 	bool HasTES4Header;
 
-	std::unordered_map<size_t, std::vector<size_t>> DialToInfosMap;
+	// Only InfoChildLinksMap is used (based on PrevInfoFormID)
 	std::unordered_map<size_t, std::vector<size_t>> InfoChildLinksMap;
 
 	EspData() : GrupCount(0), HasTES4Header(false) {}
 
 	void BuildDialTopologyIndex()
 	{
-		DialToInfosMap.clear();
 		InfoChildLinksMap.clear();
 
 		std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
-		std::unordered_map<uint32_t, size_t> DialFormIDToIdx;
 		for (size_t i = 0; i < Records.size(); ++i)
 		{
 			if (Records[i].Sig == "INFO") {
 				InfoFormIDToIdx[Records[i].FormID] = i;
+				// Update RecordOffset for each dialogue node
 				for (auto& dialogue : Records[i].LocalDialogues) {
 					dialogue.RecordOffset = static_cast<int>(i);
 				}
-			}
-			else if (Records[i].Sig == "DIAL") {
-				DialFormIDToIdx[Records[i].FormID] = i;
 			}
 		}
 
 		for (size_t i = 0; i < Records.size(); ++i)
 		{
-			if (Records[i].Sig == "INFO")
+			if (Records[i].Sig == "INFO" && Records[i].PrevInfoFormID != 0)
 			{
-				if (Records[i].ParentDialFormID != 0)
+				auto it = InfoFormIDToIdx.find(Records[i].PrevInfoFormID);
+				if (it != InfoFormIDToIdx.end())
 				{
-					auto it = DialFormIDToIdx.find(Records[i].ParentDialFormID);
-					if (it != DialFormIDToIdx.end())
-					{
-						DialToInfosMap[it->second].push_back(i);
-					}
-				}
-				if (Records[i].PrevInfoFormID != 0)
-				{
-					auto it = InfoFormIDToIdx.find(Records[i].PrevInfoFormID);
-					if (it != InfoFormIDToIdx.end())
-					{
-						InfoChildLinksMap[it->second].push_back(i);
-					}
+					InfoChildLinksMap[it->second].push_back(i);
 				}
 			}
 		}
@@ -1024,12 +1004,13 @@ public:
 			return nullptr;
 
 		if (IsCell == 1)
-			return nullptr;
+			return nullptr; // CELL records have no dialogue context
 
 		EspRecord& TargetRec = BaseRecords[RecordOffset];
 		if (TargetRec.Sig != "INFO" && TargetRec.Sig != "DIAL")
 			return nullptr;
 
+		// Find the anchor node that matches the given SubOffset
 		DialResponseNode anchorNode;
 		bool foundAnchor = false;
 		for (const auto& d : TargetRec.LocalDialogues) {
@@ -1056,6 +1037,7 @@ public:
 
 		size_t CurrentUpIdx = (size_t)RecordOffset;
 
+		// Walk backwards via PrevInfoFormID
 		while (true)
 		{
 			uint32_t prevFormID = Records[CurrentUpIdx].PrevInfoFormID;
@@ -1086,6 +1068,7 @@ public:
 			CombinedContext->Links.push_back(*it);
 		}
 
+		// Add previous dialogues in the same record (before anchor)
 		for (const auto& d : TargetRec.LocalDialogues) {
 			if (d.SubOffset < SubOffset) {
 				CombinedContext->Links.push_back(d);
@@ -1095,12 +1078,14 @@ public:
 		CombinedContext->Head = anchorNode;
 		CombinedContext->Links.push_back(anchorNode);
 
+		// Add subsequent dialogues in the same record (after anchor)
 		for (const auto& d : TargetRec.LocalDialogues) {
 			if (d.SubOffset > SubOffset) {
 				CombinedContext->Links.push_back(d);
 			}
 		}
 
+		// Walk forward via InfoChildLinksMap (children linked by PNAM)
 		size_t WalkIdx = (size_t)RecordOffset;
 		VisitedRecords.insert((size_t)RecordOffset);
 

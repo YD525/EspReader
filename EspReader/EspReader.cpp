@@ -290,11 +290,8 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
 
             EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
 
-            if (std::memcmp(hdr.Sig, "INFO", 4) == 0 && state.currentDialFormID != 0)
-            {
-                Record.ParentDialFormID = state.currentDialFormID;
-                Record.HasDialContext = true;
-            }
+            // === REMOVED: ParentDialFormID assignment (useless) ===
+            // No longer set ParentDialFormID or HasDialContext here – they are set during subrecord parsing.
 
             if (IsCompressed(hdr))
             {
@@ -667,6 +664,24 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
 // ============================================================
 //  Exported C API  –  every function takes handle as first arg
 // ============================================================
+
+// --- New dialogue context structures (lean, for C#) ---
+struct C_DialResponseNode
+{
+    uint32_t ResponseID;
+    uint32_t EmotionType;
+    int RecordOffset;
+    int SubOffset;
+};
+
+struct C_LinkDIAL
+{
+    int HasData;
+    C_DialResponseNode Head;
+    C_DialResponseNode* Links;
+    uint32_t LinkCount;
+};
+
 extern "C"
 {
     // ── Lifecycle ────────────────────────────────────────────
@@ -739,24 +754,8 @@ extern "C"
     SSELex_API int      C_GetCharacterLinkedVoiceTypeCount(EspInstance* handle, int Index);
     SSELex_API uint32_t C_GetCharacterLinkedVoiceType(EspInstance* handle, int Index, int LinkIndex);
 
-
-    struct C_DialResponseNode
-    {
-        uint32_t ResponseID;
-        uint32_t EmotionType;
-        int RecordOffset;  
-        int SubOffset;     
-    };
-
-    struct C_LinkDIAL
-    {
-        int HasData;
-        C_DialResponseNode Head;
-        C_DialResponseNode* Links; 
-        uint32_t LinkCount;
-    };
-
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recordOffset, int subOffset);
+    // ── Dialogue context (new, based on offsets) ──────────────
+    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int IsCell, int RecordOffset, int SubOffset);
     SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
 }
 
@@ -835,28 +834,28 @@ void C_ClearFilter(EspInstance* h)
     if (h && h->Filter) h->Filter->CurrentConfig.clear();
 }
 
+// --- New dialogue context API ---
 
-
-C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recordOffset, int subOffset)
+C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int IsCell, int RecordOffset, int SubOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByIndex(isCell, recordOffset, subOffset);
+    LinkDIAL* context = handle->Data->GetDialContextByIndex(IsCell, RecordOffset, SubOffset);
     if (!context) return result;
 
     result.HasData = 1;
-
+    // Head
     result.Head.ResponseID = context->Head.ResponseID;
     result.Head.EmotionType = context->Head.EmotionType;
     result.Head.RecordOffset = context->Head.RecordOffset;
     result.Head.SubOffset = context->Head.SubOffset;
 
+    // Links
     result.LinkCount = static_cast<uint32_t>(context->Links.size());
     if (result.LinkCount > 0)
     {
-        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount]();
-
+        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount];
         for (size_t i = 0; i < result.LinkCount; ++i)
         {
             linkArray[i].ResponseID = context->Links[i].ResponseID;
@@ -868,7 +867,6 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int isCell, int recor
     }
 
     delete context;
-
     return result;
 }
 
@@ -876,15 +874,13 @@ void __stdcall C_FreeDialContext(C_LinkDIAL* context)
 {
     if (!context) return;
 
-    if (context->Links)
-    {
-        delete[] context->Links;
-        context->Links = nullptr;
-        context->LinkCount = 0;
-    }
-
+    delete[] context->Links;
+    context->Links = nullptr;
+    context->LinkCount = 0;
     context->HasData = 0;
 }
+
+// --- Other C API functions (unchanged) ---
 
 int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
 {
@@ -897,18 +893,6 @@ int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
 
     Instance->LastSetPath = EspPath;
     Instance->Data = new EspData();
-
-    //CharacterTracker* CurrentTracker = Instance->CharTracker;
-
-    std::unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks = nullptr;
-    std::unordered_map<uint32_t, std::vector<uint32_t>>* DeferredVoiceTypeLinks = nullptr;
-    std::unordered_map<uint32_t, std::vector<uint32_t>>* DeferredFactionLinks = nullptr;
-    std::unordered_map<uint32_t, std::vector<uint32_t>>* DeferredRaceLinks = nullptr;
-
-    DeferredInfoLinks = &Instance->DeferredInfoLinks;
-    DeferredVoiceTypeLinks = &Instance->DeferredVoiceTypeLinks;
-    DeferredFactionLinks = &Instance->DeferredFactionLinks;
-    DeferredRaceLinks = &Instance->DeferredRaceLinks;
 
     std::ifstream Stream(EspPath, std::ios::binary);
     if (!Stream.is_open()) return 1;
@@ -1082,6 +1066,10 @@ uint32_t C_GetCharacterLinkedVoiceType(EspInstance* h, int i, int li) { const Ch
 
 BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
 
+// ============================================================
+//  Test main (optional, can be removed)
+// ============================================================
+#ifdef _DEBUG
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
@@ -1102,9 +1090,31 @@ int main()
         L"C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
 
     int state = C_ReadEsp(instance, espPath);
-
-    C_GetDialContext(instance,0,2,0);
+    if (state == 0)
+    {
+        if (!instance->Data->Records.empty())
+        {
+            for (size_t i = 0; i < instance->Data->Records.size(); ++i)
+            {
+                auto& rec = instance->Data->Records[i];
+                if (rec.Sig == "INFO" && !rec.LocalDialogues.empty())
+                {
+                    int recOff = (int)i;
+                    int subOff = rec.LocalDialogues[0].SubOffset;
+                    C_LinkDIAL ctx = C_GetDialContext(instance, 0, recOff, subOff);
+                    if (ctx.HasData)
+                    {
+                        std::cout << "Dialogue context found. Head ResponseID: " << ctx.Head.ResponseID << "\n";
+                        C_FreeDialContext(&ctx);
+                    }
+                    break;
+                }
+            }
+        }
+    }
 
     std::cout << "Done.\n";
+    C_DestroyInstance(instance);
     return 0;
 }
+#endif
