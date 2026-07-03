@@ -1036,7 +1036,7 @@ public:
 			std::string pKey = std::to_string(prev) + ":INFO";
 			auto itRec = RecordIndex.find(pKey);
 			if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
-				
+
 				DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
 				UpstreamNodes.push_back(node);
 			}
@@ -1045,12 +1045,15 @@ public:
 		for (auto it = UpstreamNodes.rbegin(); it != UpstreamNodes.rend(); ++it)
 			CombinedContext->Links.push_back(*it);
 
-		
+
 		auto ItCurr = RecordIndex.find(InfoKey);
 		if (ItCurr != RecordIndex.end() && Records[ItCurr->second].HasDialContext)
+		{
 			CombinedContext->Head = Records[ItCurr->second].DialContext.Head;
+			CombinedContext->Links.push_back(Records[ItCurr->second].DialContext.Head);
+		}
 
-		
+
 		uint32_t WalkFid = FormID;
 		Visited.insert(FormID);
 		while (true) {
@@ -1071,7 +1074,7 @@ public:
 			std::string cKey = std::to_string(NextFid) + ":INFO";
 			auto itRec = RecordIndex.find(cKey);
 			if (itRec != RecordIndex.end() && Records[itRec->second].HasDialContext) {
-				
+
 				DialResponseNode node(0, 0, Records[itRec->second].DialContext.Head.ActorLine, emptyVec, emptyVec);
 				CombinedContext->Links.push_back(node);
 			}
