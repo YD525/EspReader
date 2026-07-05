@@ -84,7 +84,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.5.5";
+static const std::string Version = "1.6.5";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -247,12 +247,6 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
     std::stack<GS> groupStack;
 
     uint32_t initialDialFormID = 0;
-
-    if (gh.GroupType == 0)
-    {
-        std::memcpy(&initialDialFormID, gh.Label, 4);
-    }
-
 
     groupStack.push({ gh.Size - 24, initialDialFormID });
 
