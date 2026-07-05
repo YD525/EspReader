@@ -201,7 +201,7 @@ void ParseSubRecordsStream(EspInstance* Instance, std::ifstream& f, uint32_t rec
 
 // ---- Instance-aware versions of the big parse functions ----
 
-static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char Sig[4])
+static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char Sig[4], uint32_t CurrentDialFormID)
 {
     RecordHeader hdr{};
     std::memcpy(hdr.Sig, Sig, 4);
@@ -213,7 +213,7 @@ static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char
     EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
     if (IsCompressed(hdr))
     {
-        if (hdr.DataSize < 4) { f.seekg(hdr.DataSize, std::ios::cur); Instance->Data->AddRecord(rec, *Instance->Filter); return; }
+        if (hdr.DataSize < 4) { f.seekg(hdr.DataSize, std::ios::cur); Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID); return; }
         uint32_t uncompressedSize = 0; Read(f, uncompressedSize);
         uint32_t compressedSize = hdr.DataSize - 4;
         std::vector<uint8_t> compressed(compressedSize);
@@ -223,10 +223,10 @@ static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char
             ParseSubRecords(Instance, decompressed.data(), decompressed.size(), rec, *Instance->Filter, hdr.Sig);
     }
     else { ParseSubRecordsStream(Instance, f, hdr.DataSize, rec, *Instance->Filter, hdr.Sig); }
-    Instance->Data->AddRecord(rec, *Instance->Filter);
+    Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID);
 }
 
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize);
+static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize,uint32_t currentDialFormID);
 
 static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
 {
@@ -237,7 +237,7 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
 
     Instance->Data->IncrementGrupCount();
 
-    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24); return; }
+    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24,0); return; }
 
     struct GS {
         uint32_t remaining;
@@ -247,10 +247,13 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
     std::stack<GS> groupStack;
 
     uint32_t initialDialFormID = 0;
+
     if (gh.GroupType == 0)
     {
         std::memcpy(&initialDialFormID, gh.Label, 4);
     }
+
+
     groupStack.push({ gh.Size - 24, initialDialFormID });
 
     while (!groupStack.empty())
@@ -267,11 +270,11 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
             if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
             Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
             if (gh.Size < 24 || gh.Size > state.remaining) { groupStack.pop(); continue; }
-            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24); state.remaining -= gh.Size; continue; }
+            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24,0); state.remaining -= gh.Size; continue; }
             Instance->Data->IncrementGrupCount();
 
             uint32_t nextDialFormID = state.currentDialFormID;
-            if (gh.GroupType == 0 || gh.GroupType == 1)
+            if (gh.GroupType != 0)
             {
                 std::memcpy(&nextDialFormID, gh.Label, 4);
             }
@@ -308,13 +311,13 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
             }
             else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
 
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter);
+            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter,state.currentDialFormID);
             state.remaining -= recordTotalSize;
         }
     }
 }
 
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize)
+static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize,uint32_t currentDialFormID)
 {
     uint32_t bytesRead = 0;
     while (bytesRead < groupSize && f.good())
@@ -335,7 +338,7 @@ static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_
             if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
             Instance->Data->IncrementGrupCount();
             uint32_t contentSize = gh.Size - 24;
-            ParseCellGroup_Inst(Instance, f, contentSize);
+            ParseCellGroup_Inst(Instance, f, contentSize,currentDialFormID);
             bytesRead += contentSize;
         }
         else
@@ -366,7 +369,7 @@ static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_
             }
             else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
 
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter);
+            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, currentDialFormID);
             bytesRead += recordTotalSize;
         }
 
@@ -903,7 +906,7 @@ int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
         if (!Stream.read(Sig, 4)) break;
 
         if (IsGRUP(Sig)) ParseGroupIterative_Inst(Instance, Stream);
-        else ParseRecord_Inst(Instance, Stream, Sig);
+        else ParseRecord_Inst(Instance, Stream, Sig, 0);
     }
 
     FlushDeferredInfoLinks_Inst(Instance);

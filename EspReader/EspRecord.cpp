@@ -950,7 +950,7 @@ public:
 
 class EspData
 {
-public:
+	public:
 	std::vector<EspRecord> Records;
 	std::unordered_map<std::string, size_t> RecordIndex;
 	std::unordered_set<uint32_t> FormIDs;
@@ -965,6 +965,7 @@ public:
 
 	// Only InfoChildLinksMap is used (based on PrevInfoFormID)
 	std::unordered_map<size_t, std::vector<size_t>> InfoChildLinksMap;
+	std::unordered_map<uint32_t, uint32_t> InFoToDialMap;
 
 	EspData() : GrupCount(0), HasTES4Header(false) {}
 
@@ -997,6 +998,26 @@ public:
 		}
 	}
 
+	size_t FindDialParentDialIndex(size_t InFoIndex)
+	{
+		if (InFoIndex >= Records.size()) return (size_t)-1;
+		if (Records[InFoIndex].Sig != "INFO") return (size_t)-1;
+
+		uint32_t InfoFormID = Records[InFoIndex].FormID;
+
+		auto It = InFoToDialMap.find(InfoFormID);
+		if (It == InFoToDialMap.end()) return (size_t)-1;
+
+		uint32_t DialFormID = It->second;
+
+		for (size_t i = 0; i < Records.size(); ++i)
+		{
+			if (Records[i].Sig == "DIAL" && Records[i].FormID == DialFormID)
+				return i;
+		}
+		return (size_t)-1;
+	}
+
 	LinkDIAL* GetDialContextByIndex(int IsCell, int RecordOffset, int SubOffset)
 	{
 		std::vector<EspRecord>& BaseRecords = (IsCell == 1) ? CellRecords : Records;
@@ -1019,6 +1040,17 @@ public:
 				foundAnchor = true;
 				break;
 			}
+		}
+
+		size_t RootIndex = 0;
+		
+		if (TargetRec.Sig == "DIAL")
+		{
+			RootIndex = RecordOffset;
+		}
+		else
+		{
+			RootIndex = FindDialParentDialIndex(RecordOffset);
 		}
 
 		if (!foundAnchor)
@@ -1074,8 +1106,24 @@ public:
 				CombinedContext->Links.push_back(d);
 			}
 		}
+		DialResponseNode HeadNode;
+		
+		HeadNode.SubOffset = 0;
 
-		CombinedContext->Head = anchorNode;
+		if (RootIndex != (size_t) -1)
+		{
+			HeadNode.RecordOffset = RootIndex;
+			HeadNode.ResponseID = BaseRecords[RootIndex].FormID;
+		}
+		else
+		{
+			HeadNode.RecordOffset = -1;
+			HeadNode.ResponseID = 0;
+		}
+		
+		HeadNode.EmotionType = 999;
+
+		CombinedContext->Head = HeadNode;
 		CombinedContext->Links.push_back(anchorNode);
 
 		// Add subsequent dialogues in the same record (after anchor)
@@ -1293,7 +1341,7 @@ public:
 		return Count;
 	}
 
-	void AddRecord(EspRecord& Rec, RecordFilter& Filter)
+	void AddRecord(EspRecord& Rec, RecordFilter& Filter,uint32_t CurrentDialFormID = 0)
 	{
 		const size_t Index = Records.size();
 		const std::string UniqueKey = Rec.GetUniqueKey();
@@ -1338,6 +1386,13 @@ public:
 		}
 		else
 		{
+			if (Rec.Sig == "INFO") 
+			{
+				if (CurrentDialFormID != 0) {
+					InFoToDialMap[Rec.FormID] = CurrentDialFormID;
+				}
+			}
+
 			if (Filter.ShouldParseRecordWithSub(Rec.Sig, ""))
 			{
 				Rec.Index = static_cast<int>(Records.size());
