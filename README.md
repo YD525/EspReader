@@ -20,3 +20,9 @@ This library was partially inspired by the logic of [SSE-Auto-Translator](https:
 ## Setup Instructions
 
 To use EspReader, simply download the latest release of [miniz](https://github.com/richgel999/miniz/releases) and copy `miniz.c` and `miniz.h` into the `EspReader` directory.
+
+
+## Contributors:
+
+YD525 (https://github.com/YD525)
+Cutleast (https://github.com/cutleast)
