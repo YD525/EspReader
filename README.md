@@ -24,5 +24,6 @@ To use EspReader, simply download the latest release of [miniz](https://github.c
 
 ## Contributors:
 
-YD525 (https://github.com/YD525)
-Cutleast (https://github.com/cutleast)
+YD525 (https://github.com/YD525).
+
+Cutleast (https://github.com/cutleast).
