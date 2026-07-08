@@ -51,6 +51,14 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(907,16): warning C
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(757,37):
       see previous definition of 'C_FreeDialContext'
   
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(917,5): warning C4273: 'C_GetTitleIndexByBookDesc': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(759,20):
+      see previous definition of 'C_GetTitleIndexByBookDesc'
+  
+C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(923,5): warning C4273: 'C_GetDescIndexByBookTitle': inconsistent dll linkage
+      C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(760,20):
+      see previous definition of 'C_GetDescIndexByBookTitle'
+  
 C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(931,5): warning C4273: 'C_ReadEsp': inconsistent dll linkage
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(700,29):
       see previous definition of 'C_ReadEsp'
@@ -220,6 +228,6 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1111,10): warning 
      Creating library C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.exp
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 3465 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 3470 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Release\EspReader.dll
