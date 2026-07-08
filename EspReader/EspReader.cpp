@@ -752,7 +752,8 @@ extern "C"
     SSELex_API uint32_t C_GetCharacterLinkedVoiceType(EspInstance* handle, int Index, int LinkIndex);
 
     // ── Dialogue context (new, based on offsets) ──────────────
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int IsCell, int RecordOffset, int SubOffset);
+    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle,int RecordOffset, int SubOffset);
+    SSELex_API C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset);
     SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
 }
 
@@ -831,14 +832,47 @@ void C_ClearFilter(EspInstance* h)
     if (h && h->Filter) h->Filter->CurrentConfig.clear();
 }
 
-// --- New dialogue context API ---
 
-C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int IsCell, int RecordOffset, int SubOffset)
+C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByIndex(IsCell, RecordOffset, SubOffset);
+    LinkDIAL* context = handle->Data->GetDialContextByDialIndex(RecordOffset);
+    if (!context) return result;
+
+    result.HasData = 1;
+    result.Head.ResponseID = context->Head.ResponseID;
+    result.Head.EmotionType = context->Head.EmotionType;
+    result.Head.RecordOffset = context->Head.RecordOffset;
+    result.Head.SubOffset = context->Head.SubOffset;
+
+    result.LinkCount = (uint32_t)context->Links.size();
+    if (result.LinkCount > 0)
+    {
+        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount];
+        for (uint32_t i = 0; i < result.LinkCount; ++i)
+        {
+            linkArray[i].ResponseID = context->Links[i].ResponseID;
+            linkArray[i].EmotionType = context->Links[i].EmotionType;
+            linkArray[i].RecordOffset = context->Links[i].RecordOffset;
+            linkArray[i].SubOffset = context->Links[i].SubOffset;
+        }
+        result.Links = linkArray;
+    }
+
+    delete context;
+    return result;
+}
+
+// --- New dialogue context API ---
+
+C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle,int RecordOffset, int SubOffset)
+{
+    C_LinkDIAL result = {};
+    if (!handle || !handle->Data) return result;
+
+    LinkDIAL* context = handle->Data->GetDialContextByIndex(RecordOffset, SubOffset);
     if (!context) return result;
 
     result.HasData = 1;
@@ -1098,7 +1132,7 @@ int main()
                 {
                     int recOff = (int)i;
                     int subOff = rec.LocalDialogues[0].SubOffset;
-                    C_LinkDIAL ctx = C_GetDialContext(instance, 0, recOff, subOff);
+                    C_LinkDIAL ctx = C_GetDialContext(instance,recOff, subOff);
                     if (ctx.HasData)
                     {
                         std::cout << "Dialogue context found. Head ResponseID: " << ctx.Head.ResponseID << "\n";

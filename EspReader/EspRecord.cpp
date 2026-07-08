@@ -1018,17 +1018,13 @@ class EspData
 		return (size_t)-1;
 	}
 
-	LinkDIAL* GetDialContextByIndex(int IsCell, int RecordOffset, int SubOffset)
+	LinkDIAL* GetDialContextByIndex(int RecordOffset, int SubOffset)
 	{
-		std::vector<EspRecord>& BaseRecords = (IsCell == 1) ? CellRecords : Records;
-		if (RecordOffset < 0 || RecordOffset >= (int)BaseRecords.size())
+		if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
 			return nullptr;
 
-		if (IsCell == 1)
-			return nullptr; // CELL records have no dialogue context
-
-		EspRecord& TargetRec = BaseRecords[RecordOffset];
-		if (TargetRec.Sig != "INFO" && TargetRec.Sig != "DIAL")
+		EspRecord& TargetRec = Records[RecordOffset];
+		if (TargetRec.Sig != "INFO")
 			return nullptr;
 
 		// Find the anchor node that matches the given SubOffset
@@ -1042,19 +1038,10 @@ class EspData
 			}
 		}
 
-		size_t RootIndex = 0;
-		
-		if (TargetRec.Sig == "DIAL")
-		{
-			RootIndex = RecordOffset;
-		}
-		else
-		{
-			RootIndex = FindDialParentDialIndex(RecordOffset);
-		}
-
 		if (!foundAnchor)
 			return nullptr;
+
+		size_t RootIndex = FindDialParentDialIndex(RecordOffset);
 
 		std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
 		for (size_t i = 0; i < Records.size(); ++i)
@@ -1066,7 +1053,6 @@ class EspData
 		LinkDIAL* CombinedContext = new LinkDIAL();
 		std::unordered_set<size_t> VisitedRecords;
 		std::vector<DialResponseNode> UpstreamNodes;
-
 		size_t CurrentUpIdx = (size_t)RecordOffset;
 
 		// Walk backwards via PrevInfoFormID
@@ -1075,18 +1061,14 @@ class EspData
 			uint32_t prevFormID = Records[CurrentUpIdx].PrevInfoFormID;
 			if (prevFormID == 0)
 				break;
-
 			auto itPrev = InfoFormIDToIdx.find(prevFormID);
 			if (itPrev == InfoFormIDToIdx.end())
 				break;
-
 			size_t prevIdx = itPrev->second;
 			if (VisitedRecords.count(prevIdx))
 				break;
-
 			VisitedRecords.insert(prevIdx);
 			CurrentUpIdx = prevIdx;
-
 			if (Records[prevIdx].HasDialContext)
 			{
 				for (auto itSub = Records[prevIdx].LocalDialogues.rbegin(); itSub != Records[prevIdx].LocalDialogues.rend(); ++itSub) {
@@ -1094,7 +1076,6 @@ class EspData
 				}
 			}
 		}
-
 		for (auto it = UpstreamNodes.rbegin(); it != UpstreamNodes.rend(); ++it)
 		{
 			CombinedContext->Links.push_back(*it);
@@ -1106,23 +1087,20 @@ class EspData
 				CombinedContext->Links.push_back(d);
 			}
 		}
-		DialResponseNode HeadNode;
-		
-		HeadNode.SubOffset = 0;
 
-		if (RootIndex != (size_t) -1)
+		DialResponseNode HeadNode;
+		HeadNode.SubOffset = 0;
+		if (RootIndex != (size_t)-1)
 		{
-			HeadNode.RecordOffset = RootIndex;
-			HeadNode.ResponseID = BaseRecords[RootIndex].FormID;
+			HeadNode.RecordOffset = (int)RootIndex;
+			HeadNode.ResponseID = Records[RootIndex].FormID;
 		}
 		else
 		{
 			HeadNode.RecordOffset = -1;
 			HeadNode.ResponseID = 0;
 		}
-		
 		HeadNode.EmotionType = 999;
-
 		CombinedContext->Head = HeadNode;
 		CombinedContext->Links.push_back(anchorNode);
 
@@ -1136,14 +1114,12 @@ class EspData
 		// Walk forward via InfoChildLinksMap (children linked by PNAM)
 		size_t WalkIdx = (size_t)RecordOffset;
 		VisitedRecords.insert((size_t)RecordOffset);
-
 		while (true)
 		{
 			auto itChild = InfoChildLinksMap.find(WalkIdx);
 			if (itChild == InfoChildLinksMap.end() || itChild->second.empty())
 				break;
-
-			size_t NextIdx = 0;
+			size_t NextIdx = (size_t)-1;
 			for (size_t ChildIdx : itChild->second)
 			{
 				if (!VisitedRecords.count(ChildIdx))
@@ -1152,17 +1128,106 @@ class EspData
 					break;
 				}
 			}
-
-			if (NextIdx == 0)
+			if (NextIdx == (size_t)-1)
 				break;
-
 			VisitedRecords.insert(NextIdx);
 			WalkIdx = NextIdx;
-
 			if (Records[NextIdx].HasDialContext)
 			{
 				for (const auto& d : Records[NextIdx].LocalDialogues) {
 					CombinedContext->Links.push_back(d);
+				}
+			}
+		}
+
+		return CombinedContext;
+	}
+
+	LinkDIAL* GetDialContextByDialIndex(int RecordOffset)
+	{
+		if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
+			return nullptr;
+
+		EspRecord& DialRec = Records[RecordOffset];
+		if (DialRec.Sig != "DIAL")
+			return nullptr;
+
+		uint32_t DialFormID = DialRec.FormID;
+
+		std::vector<size_t> TopicInfoIndices;
+		for (size_t i = 0; i < Records.size(); ++i)
+		{
+			if (Records[i].Sig != "INFO")
+				continue;
+
+			auto ItDial = InFoToDialMap.find(Records[i].FormID);
+			if (ItDial != InFoToDialMap.end() && ItDial->second == DialFormID)
+				TopicInfoIndices.push_back(i);
+		}
+
+		if (TopicInfoIndices.empty())
+			return nullptr;
+
+		std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
+		for (size_t Idx : TopicInfoIndices)
+			InfoFormIDToIdx[Records[Idx].FormID] = Idx;
+
+		LinkDIAL* CombinedContext = new LinkDIAL();
+
+		DialResponseNode HeadNode;
+		HeadNode.RecordOffset = RecordOffset;
+		HeadNode.ResponseID = DialFormID;   
+		HeadNode.SubOffset = 0;
+		HeadNode.EmotionType = 999;
+		CombinedContext->Head = HeadNode;
+
+		std::unordered_set<size_t> VisitedRecords;
+
+		for (size_t RootIdx : TopicInfoIndices)
+		{
+			if (VisitedRecords.count(RootIdx))
+				continue;
+
+			uint32_t PrevID = Records[RootIdx].PrevInfoFormID;
+			bool IsRoot = (PrevID == 0) || (InfoFormIDToIdx.find(PrevID) == InfoFormIDToIdx.end());
+			if (!IsRoot)
+				continue;
+
+			size_t WalkIdx = RootIdx;
+			VisitedRecords.insert(WalkIdx);
+
+			if (Records[WalkIdx].HasDialContext)
+			{
+				for (const auto& d : Records[WalkIdx].LocalDialogues)
+					CombinedContext->Links.push_back(d);
+			}
+
+			while (true)
+			{
+				auto ItChild = InfoChildLinksMap.find(WalkIdx);
+				if (ItChild == InfoChildLinksMap.end() || ItChild->second.empty())
+					break;
+
+				size_t NextIdx = (size_t)-1;
+				for (size_t ChildIdx : ItChild->second)
+				{
+					if (!VisitedRecords.count(ChildIdx))
+					{
+						NextIdx = ChildIdx;
+						break;
+					}
+				}
+
+				if (NextIdx == (size_t)-1)
+					break;
+
+				VisitedRecords.insert(NextIdx);
+				WalkIdx = NextIdx;
+
+				if (Records[WalkIdx].HasDialContext)
+				{
+					for (const auto& d : Records[WalkIdx].LocalDialogues)
+						CombinedContext->Links.push_back(d);
 				}
 			}
 		}
