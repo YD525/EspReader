@@ -1,4 +1,6 @@
-﻿  EspReader.cpp
+﻿  CharacterTracker.h
+  ESPHeuristicAnalysis.cpp
+  EspReader.cpp
 C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(138,38): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
 C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(140,52): warning C4267: 'argument': conversion from 'size_t' to 'mz_ulong', possible loss of data
 C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(762,14): warning C4273: 'C_CreateInstance': inconsistent dll linkage
@@ -213,5 +215,8 @@ C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(1096,10): warning 
       C:\Users\52508\source\repos\EspReader\EspReader\EspReader.cpp(752,25):
       see previous definition of 'C_GetCharacterLinkedVoiceType'
   
+  TextHelper.cpp
+  Generating Code...
+  miniz.c
      Creating library C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.lib and object C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exp
   EspReader.vcxproj -> C:\Users\52508\source\repos\EspReader\x64\Debug\EspReader.exe
