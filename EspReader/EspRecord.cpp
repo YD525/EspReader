@@ -1323,7 +1323,6 @@ public:
 		}
 	}
 
-
 	std::vector<EspRecord> SearchBySig(const std::string& ParentSig, const std::string& ChildSig = "") const
 	{
 		std::vector<EspRecord> Matches;

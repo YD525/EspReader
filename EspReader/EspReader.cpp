@@ -755,6 +755,9 @@ extern "C"
     SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle,int RecordOffset, int SubOffset);
     SSELex_API C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset);
     SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
+
+    SSELex_API int C_GetTitleIndexByBookDesc(int RecordOffset, int DescSubOffset);
+    SSELex_API int C_GetDescIndexByBookTitle(int RecordOffset, int DescSubOffset);
 }
 
 // ── Implementation ────────────────────────────────────────────
@@ -909,6 +912,18 @@ void __stdcall C_FreeDialContext(C_LinkDIAL* context)
     context->Links = nullptr;
     context->LinkCount = 0;
     context->HasData = 0;
+}
+
+int C_GetTitleIndexByBookDesc(EspInstance* Handle,int RecordOffset, int DescSubOffset)
+{
+    if (!Handle || !Handle->Data) return -1;
+    return Handle->Data->GetTitleIndexByBookDesc(RecordOffset,DescSubOffset);
+}
+
+int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset)
+{
+    if (!Handle || !Handle->Data) return -1;
+    return Handle->Data->GetDescIndexByBookTitle(RecordOffset, DescSubOffset);
 }
 
 // --- Other C API functions (unchanged) ---
