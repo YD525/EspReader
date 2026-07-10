@@ -71,6 +71,31 @@ public:
 		return !RecordTypes_.empty();
 	}
 
+	void RebuildFilters()
+	{
+		RecordTypes_.clear();
+		SubRecordFilters_.clear();
+
+		for (const auto& KV : CurrentConfig)
+		{
+			std::string Sig = KV.first.substr(0, 4);
+			RecordTypes_.insert(Sig);
+
+			for (const auto& SubSig : KV.second)
+			{
+				std::string Sub = SubSig.substr(0, 4);
+				SubRecordFilters_[Sig].insert(Sub);
+			}
+		}
+	}
+
+	void ClearFilters()
+	{
+		CurrentConfig.clear();
+		RecordTypes_.clear();
+		SubRecordFilters_.clear();
+	}
+
 private:
 	std::unordered_set<std::string> RecordTypes_;
 	std::unordered_map<std::string, std::unordered_set<std::string>> SubRecordFilters_;

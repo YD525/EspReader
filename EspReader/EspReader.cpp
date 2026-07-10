@@ -84,7 +84,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.6.5";
+static const std::string Version = "1.6.6";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -827,12 +827,18 @@ int C_SetFilter(EspInstance* h, const char* ParentSig, const char** ChildSigs, i
     std::string Parent(ParentSig);
     std::vector<std::string>& Vec = h->Filter->CurrentConfig[Parent];
     for (int i = 0; i < ChildCount; ++i) Vec.push_back(std::string(ChildSigs[i]));
+
+    h->Filter->RebuildFilters();
+
     return static_cast<int>(Vec.size());
 }
 
-void C_ClearFilter(EspInstance* h)
+void C_ClearFilter(EspInstance* Handle)
 {
-    if (h && h->Filter) h->Filter->CurrentConfig.clear();
+    if (Handle && Handle->Filter)
+    {
+        Handle->Filter->ClearFilters(); 
+    }
 }
 
 
