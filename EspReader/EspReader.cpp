@@ -1143,11 +1143,11 @@ int main()
     std::wcout << L"Starting ESP parsing...\n";
 
     const wchar_t* espPath =
-        L"C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
+        L"E:\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
 
     int state = C_ReadEsp(instance, espPath);
 
-    std::wstring wPath = L"C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC_Test.esp";
+    std::wstring wPath = L"E:\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\Test3DNPC.esp";
     int len = WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, NULL, 0, NULL, NULL);
     std::string utf8Path(len, 0);
     WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, &utf8Path[0], len, NULL, NULL);
