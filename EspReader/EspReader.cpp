@@ -84,7 +84,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.6.6";
+static const std::string Version = "1.6.7";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -335,7 +335,7 @@ static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_
             if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
             Instance->Data->IncrementGrupCount();
             uint32_t contentSize = gh.Size - 24;
-            ParseCellGroup_Inst(Instance, f, contentSize, currentDialFormID);  // 传递 currentDialFormID
+            ParseCellGroup_Inst(Instance, f, contentSize, currentDialFormID);  //Pass currentDialFormID
             bytesRead += contentSize;
         }
         else
