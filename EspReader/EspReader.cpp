@@ -311,14 +311,13 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
     }
 }
 
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize,uint32_t currentDialFormID)
+static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize, uint32_t currentDialFormID)
 {
     uint32_t bytesRead = 0;
     while (bytesRead < groupSize && f.good())
     {
         if (groupSize - bytesRead < 4) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
         char sig[4];
-        std::streampos posBefore = f.tellg();
         if (!f.read(sig, 4)) break;
         bytesRead += 4;
 
@@ -327,12 +326,16 @@ static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_
             if (groupSize - bytesRead < 20) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
             GroupHeader gh{};
             std::memcpy(gh.Sig, sig, 4);
-            Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
+            Read(f, gh.Size);
+            f.read(gh.Label, 4);
+            Read(f, gh.GroupType);
+            Read(f, gh.Stamp);
+            Read(f, gh.Unknown);
             bytesRead += 20;
             if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
             Instance->Data->IncrementGrupCount();
             uint32_t contentSize = gh.Size - 24;
-            ParseCellGroup_Inst(Instance, f, contentSize,currentDialFormID);
+            ParseCellGroup_Inst(Instance, f, contentSize, currentDialFormID);  // 传递 currentDialFormID
             bytesRead += contentSize;
         }
         else
@@ -340,19 +343,23 @@ static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_
             if (groupSize - bytesRead < 20) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
             RecordHeader hdr{};
             std::memcpy(hdr.Sig, sig, 4);
-            Read(f, hdr.DataSize); Read(f, hdr.Flags); Read(f, hdr.FormID); Read(f, hdr.VersionCtrl); Read(f, hdr.Version); Read(f, hdr.Unknown);
+            Read(f, hdr.DataSize);
+            Read(f, hdr.Flags);
+            Read(f, hdr.FormID);
+            Read(f, hdr.VersionCtrl);
+            Read(f, hdr.Version);
+            Read(f, hdr.Unknown);
             bytesRead += 20;
             uint32_t recordTotalSize = hdr.DataSize;
             if (recordTotalSize > (groupSize - bytesRead)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-
-            //CharacterTracker* CurrentTracker = Instance->CharTracker;
 
             EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
             if (IsCompressed(hdr))
             {
                 if (hdr.DataSize < 4) f.seekg(hdr.DataSize, std::ios::cur);
                 else {
-                    uint32_t uncompressedSize = 0; Read(f, uncompressedSize);
+                    uint32_t uncompressedSize = 0;
+                    Read(f, uncompressedSize);
                     uint32_t compressedSize = hdr.DataSize - 4;
                     std::vector<uint8_t> compressed(compressedSize);
                     f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
@@ -366,10 +373,6 @@ static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_
             if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, currentDialFormID);
             bytesRead += recordTotalSize;
         }
-
-        std::streampos posAfter = f.tellg();
-        int64_t consumed = static_cast<int64_t>(posAfter - posBefore);
-        if (consumed > 0) bytesRead = static_cast<uint32_t>(posAfter - posBefore + (bytesRead - consumed));
     }
     if (bytesRead < groupSize) f.seekg(groupSize - bytesRead, std::ios::cur);
 }
@@ -580,6 +583,7 @@ static bool ProcessGRUP_Inst(std::ifstream& Fin, std::ofstream& Fout, const char
 {
     GroupHeader GH{}; std::memcpy(GH.Sig, Sig, 4);
     Read(Fin, GH.Size); Fin.read(GH.Label, 4); Read(Fin, GH.GroupType); Read(Fin, GH.Stamp); Read(Fin, GH.Unknown);
+
     if (GH.Size < 24) return false;
 
     std::streampos headerPos = Fout.tellp();
@@ -1142,6 +1146,16 @@ int main()
         L"C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC.esp";
 
     int state = C_ReadEsp(instance, espPath);
+
+    std::wstring wPath = L"C:\\Users\\52508\\Desktop\\1TestMod\\Interesting NPCs - 4.5 to 4.54 Update-29194-4-54-1681353795\\Data\\3DNPC_Test.esp";
+    int len = WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, NULL, 0, NULL, NULL);
+    std::string utf8Path(len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, &utf8Path[0], len, NULL, NULL);
+    utf8Path.pop_back(); 
+
+    bool result = SaveEsp_Inst(instance, utf8Path.c_str());
+    std::cout << "Save result: " << (result ? "true" : "false") << "\n";
+
     if (state == 0)
     {
         if (!instance->Data->Records.empty())
@@ -1153,7 +1167,7 @@ int main()
                 {
                     int recOff = (int)i;
                     int subOff = rec.LocalDialogues[0].SubOffset;
-                    C_LinkDIAL ctx = C_GetDialContext(instance,recOff, subOff);
+                    C_LinkDIAL ctx = C_GetDialContext(instance, recOff, subOff);
                     if (ctx.HasData)
                     {
                         std::cout << "Dialogue context found. Head ResponseID: " << ctx.Head.ResponseID << "\n";
