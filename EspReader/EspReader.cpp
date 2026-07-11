@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include "miniz.h"
 #include <random>
+#include <mutex>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -635,31 +636,37 @@ static bool ProcessFileContent_Inst(std::ifstream& Fin, std::ofstream& Fout,
     return true;
 }
 
+static std::mutex SaveEspLock;
+
 static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
 {
+    std::lock_guard<std::mutex> Lock(SaveEspLock);
+
     if (!inst || inst->LastSetPath.empty() || !Utf8Path) return false;
+
+    int Wlen = MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, NULL, 0);
+    if (Wlen == 0) return false;
+    std::wstring WSavePath(Wlen - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, &WSavePath[0], Wlen);
+
+    if (WSavePath == inst->LastSetPath) return false;
 
     std::ifstream Fin(inst->LastSetPath, std::ios::binary);
     if (!Fin.is_open()) return false;
 
-    int Wlen = MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, NULL, 0);
-    if (Wlen == 0) { Fin.close(); return false; }
-    std::wstring WSavePath(Wlen - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, &WSavePath[0], Wlen);
-
     std::ofstream Fout(WSavePath, std::ios::binary);
     if (!Fout.is_open()) { Fin.close(); return false; }
 
-    static char readBuf[4 * 1024 * 1024];
-    static char writeBuf[4 * 1024 * 1024];
-    Fin.rdbuf()->pubsetbuf(readBuf, sizeof(readBuf));
-    Fout.rdbuf()->pubsetbuf(writeBuf, sizeof(writeBuf));
+    static char ReadBuf[4 * 1024 * 1024];
+    static char WriteBuf[4 * 1024 * 1024];
+    Fin.rdbuf()->pubsetbuf(ReadBuf, sizeof(ReadBuf));
+    Fout.rdbuf()->pubsetbuf(WriteBuf, sizeof(WriteBuf));
 
-    auto modifiedIndex = BuildModifiedIndex(inst);
-    bool success = ProcessFileContent_Inst(Fin, Fout, modifiedIndex);
+    auto ModifiedIndex = BuildModifiedIndex(inst);
+    bool Success = ProcessFileContent_Inst(Fin, Fout, ModifiedIndex);
 
     Fin.close(); Fout.close();
-    return success;
+    return Success;
 }
 
 // ============================================================
