@@ -23,7 +23,8 @@ class RecordFilter
 {
 public:
 	bool AllowAll;
-	RecordFilter() : AllowAll(false) {}
+	bool FileIsLocalized; // true only if the TES4 header's real Localized bit was set; set once during read, not guessed per-field
+	RecordFilter() : AllowAll(false), FileIsLocalized(false) {}
 	void AddRecordType(const std::string& recordType, const std::vector<std::string>& subRecords)
 	{
 		std::string sig = recordType.substr(0, 4);
@@ -482,6 +483,8 @@ public:
 		}
 	}
 
+	// Deprecated: no longer used. IsLocalizedField is now driven by the real TES4 header
+	// Localized flag (RecordFilter::FileIsLocalized) instead of guessing per-field.
 	bool IsProbablyStringID(const uint8_t* data, size_t size)
 	{
 		if (size < 4) return false;
@@ -890,9 +893,7 @@ public:
 		{
 			Sub.Data.assign(DataPtr, DataPtr + Size);
 
-			bool IsLocalizedField = false;
-
-			IsLocalizedField = Size == 4 && IsProbablyStringID(DataPtr, 4);
+			bool IsLocalizedField = Filter.FileIsLocalized && Size == 4;
 
 			if (IsLocalizedField)
 			{
@@ -924,6 +925,7 @@ public:
 		{
 			if (Sub.IsLocalized == true)
 			{
+				if(Sub.StringID > 0)
 				SubRecords.push_back(Sub);
 			}
 			else
@@ -1176,94 +1178,94 @@ public:
 	LinkDIAL* GetDialContextByDialIndex(int RecordOffset)
 	{
 		try {
-		if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
-			return nullptr;
+			if (RecordOffset < 0 || RecordOffset >= (int)Records.size())
+				return nullptr;
 
-		EspRecord& DialRec = Records[RecordOffset];
-		if (DialRec.Sig != "DIAL")
-			return nullptr;
+			EspRecord& DialRec = Records[RecordOffset];
+			if (DialRec.Sig != "DIAL")
+				return nullptr;
 
-		uint32_t DialFormID = DialRec.FormID;
+			uint32_t DialFormID = DialRec.FormID;
 
-		std::vector<size_t> TopicInfoIndices;
-		for (size_t i = 0; i < Records.size(); ++i)
-		{
-			if (Records[i].Sig != "INFO")
-				continue;
-
-			auto ItDial = InFoToDialMap.find(Records[i].FormID);
-			if (ItDial != InFoToDialMap.end() && ItDial->second == DialFormID)
-				TopicInfoIndices.push_back(i);
-		}
-
-		if (TopicInfoIndices.empty())
-			return nullptr;
-
-		std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
-		for (size_t Idx : TopicInfoIndices)
-			InfoFormIDToIdx[Records[Idx].FormID] = Idx;
-
-		LinkDIAL* CombinedContext = new LinkDIAL();
-
-		DialResponseNode HeadNode;
-		HeadNode.RecordOffset = RecordOffset;
-		HeadNode.ResponseID = DialFormID;
-		HeadNode.SubOffset = 0;
-		HeadNode.EmotionType = 999;
-		CombinedContext->Head = HeadNode;
-
-		std::unordered_set<size_t> VisitedRecords;
-
-		for (size_t RootIdx : TopicInfoIndices)
-		{
-			if (VisitedRecords.count(RootIdx))
-				continue;
-
-			uint32_t PrevID = Records[RootIdx].PrevInfoFormID;
-			bool IsRoot = (PrevID == 0) || (InfoFormIDToIdx.find(PrevID) == InfoFormIDToIdx.end());
-			if (!IsRoot)
-				continue;
-
-			size_t WalkIdx = RootIdx;
-			VisitedRecords.insert(WalkIdx);
-
-			if (Records[WalkIdx].HasDialContext)
+			std::vector<size_t> TopicInfoIndices;
+			for (size_t i = 0; i < Records.size(); ++i)
 			{
-				for (const auto& d : Records[WalkIdx].LocalDialogues)
-					CombinedContext->Links.push_back(d);
+				if (Records[i].Sig != "INFO")
+					continue;
+
+				auto ItDial = InFoToDialMap.find(Records[i].FormID);
+				if (ItDial != InFoToDialMap.end() && ItDial->second == DialFormID)
+					TopicInfoIndices.push_back(i);
 			}
 
-			while (true)
+			if (TopicInfoIndices.empty())
+				return nullptr;
+
+			std::unordered_map<uint32_t, size_t> InfoFormIDToIdx;
+			for (size_t Idx : TopicInfoIndices)
+				InfoFormIDToIdx[Records[Idx].FormID] = Idx;
+
+			LinkDIAL* CombinedContext = new LinkDIAL();
+
+			DialResponseNode HeadNode;
+			HeadNode.RecordOffset = RecordOffset;
+			HeadNode.ResponseID = DialFormID;
+			HeadNode.SubOffset = 0;
+			HeadNode.EmotionType = 999;
+			CombinedContext->Head = HeadNode;
+
+			std::unordered_set<size_t> VisitedRecords;
+
+			for (size_t RootIdx : TopicInfoIndices)
 			{
-				auto ItChild = InfoChildLinksMap.find(WalkIdx);
-				if (ItChild == InfoChildLinksMap.end() || ItChild->second.empty())
-					break;
+				if (VisitedRecords.count(RootIdx))
+					continue;
 
-				size_t NextIdx = (size_t)-1;
-				for (size_t ChildIdx : ItChild->second)
-				{
-					if (!VisitedRecords.count(ChildIdx))
-					{
-						NextIdx = ChildIdx;
-						break;
-					}
-				}
+				uint32_t PrevID = Records[RootIdx].PrevInfoFormID;
+				bool IsRoot = (PrevID == 0) || (InfoFormIDToIdx.find(PrevID) == InfoFormIDToIdx.end());
+				if (!IsRoot)
+					continue;
 
-				if (NextIdx == (size_t)-1)
-					break;
-
-				VisitedRecords.insert(NextIdx);
-				WalkIdx = NextIdx;
+				size_t WalkIdx = RootIdx;
+				VisitedRecords.insert(WalkIdx);
 
 				if (Records[WalkIdx].HasDialContext)
 				{
 					for (const auto& d : Records[WalkIdx].LocalDialogues)
 						CombinedContext->Links.push_back(d);
 				}
-			}
-		}
 
-		return CombinedContext;
+				while (true)
+				{
+					auto ItChild = InfoChildLinksMap.find(WalkIdx);
+					if (ItChild == InfoChildLinksMap.end() || ItChild->second.empty())
+						break;
+
+					size_t NextIdx = (size_t)-1;
+					for (size_t ChildIdx : ItChild->second)
+					{
+						if (!VisitedRecords.count(ChildIdx))
+						{
+							NextIdx = ChildIdx;
+							break;
+						}
+					}
+
+					if (NextIdx == (size_t)-1)
+						break;
+
+					VisitedRecords.insert(NextIdx);
+					WalkIdx = NextIdx;
+
+					if (Records[WalkIdx].HasDialContext)
+					{
+						for (const auto& d : Records[WalkIdx].LocalDialogues)
+							CombinedContext->Links.push_back(d);
+					}
+				}
+			}
+
+			return CombinedContext;
 		}
 		catch (...) {
 			return nullptr;
@@ -1273,36 +1275,36 @@ public:
 	int GetTitleIndexByBookDesc(int RecordOffset, int DescSubOffset) const
 	{
 		try {
-		if (RecordOffset < 0 || RecordOffset >= static_cast<int>(Records.size()))
-			return -1;
+			if (RecordOffset < 0 || RecordOffset >= static_cast<int>(Records.size()))
+				return -1;
 
-		const EspRecord& TargetRec = Records[RecordOffset];
+			const EspRecord& TargetRec = Records[RecordOffset];
 
-		if (TargetRec.Sig != "BOOK")
-			return -1;
+			if (TargetRec.Sig != "BOOK")
+				return -1;
 
-		bool IsValidDesc = false;
-		for (const auto& Sub : TargetRec.SubRecords)
-		{
-			if (Sub.Index == DescSubOffset && Sub.Sig == "DESC")
+			bool IsValidDesc = false;
+			for (const auto& Sub : TargetRec.SubRecords)
 			{
-				IsValidDesc = true;
-				break;
+				if (Sub.Index == DescSubOffset && Sub.Sig == "DESC")
+				{
+					IsValidDesc = true;
+					break;
+				}
 			}
-		}
 
-		if (!IsValidDesc)
-			return -1;
+			if (!IsValidDesc)
+				return -1;
 
-		for (const auto& Sub : TargetRec.SubRecords)
-		{
-			if (Sub.Sig == "FULL")
+			for (const auto& Sub : TargetRec.SubRecords)
 			{
-				return Sub.Index;
+				if (Sub.Sig == "FULL")
+				{
+					return Sub.Index;
+				}
 			}
-		}
 
-		return -1;
+			return -1;
 		}
 		catch (...) {
 			return -1;
@@ -1312,36 +1314,36 @@ public:
 	int GetDescIndexByBookTitle(int RecordOffset, int TitleSubOffset) const
 	{
 		try {
-		if (RecordOffset < 0 || RecordOffset >= static_cast<int>(Records.size()))
-			return -1;
+			if (RecordOffset < 0 || RecordOffset >= static_cast<int>(Records.size()))
+				return -1;
 
-		const EspRecord& TargetRec = Records[RecordOffset];
+			const EspRecord& TargetRec = Records[RecordOffset];
 
-		if (TargetRec.Sig != "BOOK")
-			return -1;
+			if (TargetRec.Sig != "BOOK")
+				return -1;
 
-		bool IsValidTitle = false;
-		for (const auto& Sub : TargetRec.SubRecords)
-		{
-			if (Sub.Index == TitleSubOffset && Sub.Sig == "FULL")
+			bool IsValidTitle = false;
+			for (const auto& Sub : TargetRec.SubRecords)
 			{
-				IsValidTitle = true;
-				break;
+				if (Sub.Index == TitleSubOffset && Sub.Sig == "FULL")
+				{
+					IsValidTitle = true;
+					break;
+				}
 			}
-		}
 
-		if (!IsValidTitle)
-			return -1;
+			if (!IsValidTitle)
+				return -1;
 
-		for (const auto& Sub : TargetRec.SubRecords)
-		{
-			if (Sub.Sig == "DESC")
+			for (const auto& Sub : TargetRec.SubRecords)
 			{
-				return Sub.Index;
+				if (Sub.Sig == "DESC")
+				{
+					return Sub.Index;
+				}
 			}
-		}
 
-		return -1;
+			return -1;
 		}
 		catch (...) {
 			return -1;

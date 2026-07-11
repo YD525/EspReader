@@ -85,7 +85,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.6.7";
+static const std::string Version = "1.6.8";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -121,6 +121,7 @@ struct SubRecordHeader {
 #pragma pack(pop)
 
 constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
+constexpr uint32_t RECORD_FLAG_LOCALIZED = 0x00000080; // TES4 header only
 
 template<typename T>
 inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out), sizeof(T)); }
@@ -212,6 +213,11 @@ static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char
     //CharacterTracker* CurrentTracker = Instance->CharTracker;
 
     EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
+
+    if (std::memcmp(hdr.Sig, "TES4", 4) == 0)
+    {
+        Instance->Filter->FileIsLocalized = (hdr.Flags & RECORD_FLAG_LOCALIZED) != 0;
+    }
     if (IsCompressed(hdr))
     {
         if (hdr.DataSize < 4) { f.seekg(hdr.DataSize, std::ios::cur); Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID); return; }
@@ -227,7 +233,7 @@ static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char
     Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID);
 }
 
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize,uint32_t currentDialFormID);
+static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize, uint32_t currentDialFormID);
 
 static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
 {
@@ -238,7 +244,7 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
 
     Instance->Data->IncrementGrupCount();
 
-    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24,0); return; }
+    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24, 0); return; }
 
     struct GS {
         uint32_t remaining;
@@ -265,7 +271,7 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
             if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
             Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
             if (gh.Size < 24 || gh.Size > state.remaining) { groupStack.pop(); continue; }
-            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24,0); state.remaining -= gh.Size; continue; }
+            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24, 0); state.remaining -= gh.Size; continue; }
             Instance->Data->IncrementGrupCount();
 
             uint32_t nextDialFormID = state.currentDialFormID;
@@ -306,7 +312,7 @@ static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
             }
             else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
 
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter,state.currentDialFormID);
+            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, state.currentDialFormID);
             state.remaining -= recordTotalSize;
         }
     }
@@ -763,12 +769,12 @@ extern "C"
     SSELex_API uint32_t C_GetCharacterLinkedVoiceType(EspInstance* handle, int Index, int LinkIndex);
 
     // ── Dialogue context (new, based on offsets) ──────────────
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle,int RecordOffset, int SubOffset);
+    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int SubOffset);
     SSELex_API C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset);
     SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
 
-    SSELex_API int C_GetTitleIndexByBookDesc(EspInstance* Handle,int RecordOffset, int DescSubOffset);
-    SSELex_API int C_GetDescIndexByBookTitle(EspInstance* Handle,int RecordOffset, int DescSubOffset);
+    SSELex_API int C_GetTitleIndexByBookDesc(EspInstance* Handle, int RecordOffset, int DescSubOffset);
+    SSELex_API int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset);
 }
 
 // ── Implementation ────────────────────────────────────────────
@@ -848,7 +854,7 @@ void C_ClearFilter(EspInstance* Handle)
 {
     if (Handle && Handle->Filter)
     {
-        Handle->Filter->ClearFilters(); 
+        Handle->Filter->ClearFilters();
     }
 }
 
@@ -887,7 +893,7 @@ C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffse
 
 // --- New dialogue context API ---
 
-C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle,int RecordOffset, int SubOffset)
+C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int SubOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
@@ -931,10 +937,10 @@ void __stdcall C_FreeDialContext(C_LinkDIAL* context)
     context->HasData = 0;
 }
 
-int C_GetTitleIndexByBookDesc(EspInstance* Handle,int RecordOffset, int DescSubOffset)
+int C_GetTitleIndexByBookDesc(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
     if (!Handle || !Handle->Data) return -1;
-    return Handle->Data->GetTitleIndexByBookDesc(RecordOffset,DescSubOffset);
+    return Handle->Data->GetTitleIndexByBookDesc(RecordOffset, DescSubOffset);
 }
 
 int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset)
@@ -1158,7 +1164,7 @@ int main()
     int len = WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, NULL, 0, NULL, NULL);
     std::string utf8Path(len, 0);
     WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, &utf8Path[0], len, NULL, NULL);
-    utf8Path.pop_back(); 
+    utf8Path.pop_back();
 
     bool result = SaveEsp_Inst(instance, utf8Path.c_str());
     std::cout << "Save result: " << (result ? "true" : "false") << "\n";
