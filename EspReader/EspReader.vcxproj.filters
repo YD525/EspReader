@@ -32,6 +32,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="EspBinaryReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="miniz.h">
       <Filter>Source Files</Filter>
     </ClInclude>

@@ -9,6 +9,8 @@
 #include "miniz.h"
 #include <random>
 #include <mutex>
+#include <limits>
+#include <stdexcept>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -22,6 +24,7 @@
 
 
 #include "EspRecord.cpp"
+#include "EspBinaryReader.h"
 
 class EspInstance
 {
@@ -44,9 +47,19 @@ public:
 
     EspInstance()
     {
-        TextValidator = new ESP_HeuristicAnalysis();
-        CharTracker = new CharacterTracker();
-        Filter = new RecordFilter();
+        try
+        {
+            TextValidator = new ESP_HeuristicAnalysis();
+            CharTracker = new CharacterTracker();
+            Filter = new RecordFilter();
+        }
+        catch (...)
+        {
+            delete TextValidator;
+            delete CharTracker;
+            delete Filter;
+            throw;
+        }
     }
 
     ~EspInstance() { ReleaseAll(); }
@@ -85,7 +98,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.6.8";
+static const std::string Version = "1.0.0.2";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -123,13 +136,44 @@ struct SubRecordHeader {
 constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
 constexpr uint32_t RECORD_FLAG_LOCALIZED = 0x00000080; // TES4 header only
 
-template<typename T>
-inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out), sizeof(T)); }
 inline bool IsGRUP(const char sig[4]) { return std::memcmp(sig, "GRUP", 4) == 0; }
 inline bool IsCompressed(const RecordHeader& hdr) { return (hdr.Flags & RECORD_FLAG_COMPRESSED) != 0; }
 
+namespace
+{
+    constexpr std::size_t MaxRecordDataSize = 256ULL * 1024ULL * 1024ULL;
+    constexpr std::size_t MaxDecompressedRecordSize = 512ULL * 1024ULL * 1024ULL;
+    constexpr std::size_t MaxSubRecordDataSize = 256ULL * 1024ULL * 1024ULL;
+    constexpr std::uint32_t MaxGroupDepth = 128;
+    constexpr std::uint64_t MaxRecordCount = 10'000'000;
+    constexpr std::uint64_t MaxGroupCount = 1'000'000;
+
+    struct EspParseBudget
+    {
+        std::uint64_t RecordCount = 0;
+        std::uint64_t GroupCount = 0;
+
+        void AddRecord(EspBinaryReader& reader)
+        {
+            if (++RecordCount > MaxRecordCount)
+                reader.Reject("Plugin record count exceeds the configured limit.");
+        }
+
+        void AddGroup(EspBinaryReader& reader, std::uint32_t depth)
+        {
+            if (depth > MaxGroupDepth)
+                reader.Reject("Plugin group nesting exceeds the configured limit.");
+            if (++GroupCount > MaxGroupCount)
+                reader.Reject("Plugin group count exceeds the configured limit.");
+        }
+    };
+}
+
 bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out, size_t uncompressedSize)
 {
+    if (uncompressedSize > MaxDecompressedRecordSize || (srcSize != 0 && src == nullptr))
+        return false;
+
     out.resize(uncompressedSize);
     size_t ret = tinfl_decompress_mem_to_mem(out.data(), uncompressedSize, src, srcSize, TINFL_FLAG_PARSE_ZLIB_HEADER);
     return ret == uncompressedSize;
@@ -137,9 +181,13 @@ bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& ou
 
 bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
 {
-    mz_ulong destLen = compressBound(srcSize);
+    if (srcSize > static_cast<size_t>((std::numeric_limits<mz_ulong>::max)()))
+        return false;
+
+    const mz_ulong sourceLength = static_cast<mz_ulong>(srcSize);
+    mz_ulong destLen = compressBound(sourceLength);
     out.resize(destLen);
-    int ret = compress2(out.data(), &destLen, src, srcSize, Z_BEST_COMPRESSION);
+    int ret = compress2(out.data(), &destLen, src, sourceLength, Z_BEST_COMPRESSION);
     if (ret != Z_OK) return false;
     out.resize(destLen);
     return true;
@@ -148,240 +196,181 @@ bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
 // ============================================================
 //  Parsing helpers  (take EspInstance* instead of globals)
 // ============================================================
-void ParseSubRecords(EspInstance* Instance, const uint8_t* data, size_t dataSize, EspRecord& rec,
-    const RecordFilter& filter, const char recordSig[4])
+static void ParseSubRecords(
+    EspInstance* instance,
+    EspBinaryReader& reader,
+    std::uint64_t end,
+    EspRecord& record,
+    const char recordSignature[4])
 {
-    rec.OnRecordBegin();
-    size_t offset = 0;
-    while (offset + sizeof(SubRecordHeader) <= dataSize)
+    record.OnRecordBegin();
+    while (reader.Position() < end)
     {
-        const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
-        if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
-        rec.AddSubRecord(
-            Instance->CharTracker,
-            Instance->TextValidator
-            , sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
-            const_cast<RecordFilter&>(filter));
-        offset += sizeof(SubRecordHeader) + sub->Size;
-    }
-    rec.OnRecordFinished(
-        Instance->CharTracker,
-        &Instance->DeferredInfoLinks,
-        &Instance->DeferredVoiceTypeLinks,
-        &Instance->DeferredFactionLinks,
-        &Instance->DeferredRaceLinks
-        , recordSig, nullptr, 0);
-}
+        reader.RequireWithin(end, sizeof(SubRecordHeader), "Subrecord header");
+        char signature[4]{};
+        reader.Read(signature, sizeof(signature), "Subrecord signature");
+        std::uint32_t dataSize = reader.ReadValue<std::uint16_t>("Subrecord size");
 
-void ParseSubRecordsStream(EspInstance* Instance, std::ifstream& f, uint32_t recordSize, EspRecord& rec,
-    const RecordFilter& filter, const char recordSig[4])
-{
-    rec.OnRecordBegin();
-    uint32_t bytesRead = 0;
-    while (bytesRead < recordSize && f.good())
-    {
-        if (bytesRead + sizeof(SubRecordHeader) > recordSize) { f.seekg(recordSize - bytesRead, std::ios::cur); break; }
-        SubRecordHeader sub{};
-        if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
-        bytesRead += sizeof(SubRecordHeader);
-        if (bytesRead + sub.Size > recordSize) { f.seekg(recordSize - bytesRead, std::ios::cur); break; }
-        std::vector<uint8_t> buf(sub.Size);
-        if (sub.Size > 0) { f.read(reinterpret_cast<char*>(buf.data()), sub.Size); bytesRead += sub.Size; }
-        rec.AddSubRecord(
-            Instance->CharTracker,
-            Instance->TextValidator
-            , sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
-    }
-    rec.OnRecordFinished(
-        Instance->CharTracker,
-        &Instance->DeferredInfoLinks,
-        &Instance->DeferredVoiceTypeLinks,
-        &Instance->DeferredFactionLinks,
-        &Instance->DeferredRaceLinks
-        , recordSig, nullptr, 0);
-}
-
-// ---- Instance-aware versions of the big parse functions ----
-
-static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char Sig[4], uint32_t CurrentDialFormID)
-{
-    RecordHeader hdr{};
-    std::memcpy(hdr.Sig, Sig, 4);
-    Read(f, hdr.DataSize); Read(f, hdr.Flags); Read(f, hdr.FormID);
-    Read(f, hdr.VersionCtrl); Read(f, hdr.Version); Read(f, hdr.Unknown);
-
-    //CharacterTracker* CurrentTracker = Instance->CharTracker;
-
-    EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
-
-    if (std::memcmp(hdr.Sig, "TES4", 4) == 0)
-    {
-        Instance->Filter->FileIsLocalized = (hdr.Flags & RECORD_FLAG_LOCALIZED) != 0;
-    }
-    if (IsCompressed(hdr))
-    {
-        if (hdr.DataSize < 4) { f.seekg(hdr.DataSize, std::ios::cur); Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID); return; }
-        uint32_t uncompressedSize = 0; Read(f, uncompressedSize);
-        uint32_t compressedSize = hdr.DataSize - 4;
-        std::vector<uint8_t> compressed(compressedSize);
-        f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
-        std::vector<uint8_t> decompressed;
-        if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-            ParseSubRecords(Instance, decompressed.data(), decompressed.size(), rec, *Instance->Filter, hdr.Sig);
-    }
-    else { ParseSubRecordsStream(Instance, f, hdr.DataSize, rec, *Instance->Filter, hdr.Sig); }
-    Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID);
-}
-
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize, uint32_t currentDialFormID);
-
-static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
-{
-    GroupHeader gh{};
-    std::memcpy(gh.Sig, "GRUP", 4);
-    Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
-    if (gh.Size < 24) return;
-
-    Instance->Data->IncrementGrupCount();
-
-    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24, 0); return; }
-
-    struct GS {
-        uint32_t remaining;
-        uint32_t currentDialFormID;
-    };
-
-    std::stack<GS> groupStack;
-
-    uint32_t initialDialFormID = 0;
-
-    groupStack.push({ gh.Size - 24, initialDialFormID });
-
-    while (!groupStack.empty())
-    {
-        auto& state = groupStack.top();
-        if (state.remaining == 0) { groupStack.pop(); continue; }
-        if (state.remaining < 4) { f.seekg(state.remaining, std::ios::cur); groupStack.pop(); continue; }
-
-        char sig[4];
-        if (!f.read(sig, 4)) { groupStack.pop(); continue; }
-
-        if (IsGRUP(sig))
+        if (std::memcmp(signature, "XXXX", 4) == 0)
         {
-            if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
-            Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
-            if (gh.Size < 24 || gh.Size > state.remaining) { groupStack.pop(); continue; }
-            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24, 0); state.remaining -= gh.Size; continue; }
-            Instance->Data->IncrementGrupCount();
+            if (dataSize != sizeof(std::uint32_t))
+                reader.Reject("Extended subrecord size marker has an invalid payload length.");
 
-            uint32_t nextDialFormID = state.currentDialFormID;
-            if (gh.GroupType != 0)
-            {
-                std::memcpy(&nextDialFormID, gh.Label, 4);
-            }
-
-            state.remaining -= gh.Size;
-            groupStack.push({ gh.Size - 24, nextDialFormID });
+            dataSize = reader.ReadValue<std::uint32_t>("Extended subrecord size");
+            reader.RequireWithin(end, sizeof(SubRecordHeader), "Extended subrecord header");
+            reader.Read(signature, sizeof(signature), "Extended subrecord signature");
+            const std::uint16_t encodedSize = reader.ReadValue<std::uint16_t>("Extended subrecord encoded size");
+            if (encodedSize != 0)
+                reader.Reject("Extended subrecord must use a zero 16-bit size field.");
         }
+
+        reader.RequireWithin(end, dataSize, "Subrecord data");
+        std::vector<std::uint8_t> data = reader.ReadBytes(
+            dataSize,
+            MaxSubRecordDataSize,
+            "Subrecord data");
+        record.AddSubRecord(
+            instance->CharTracker,
+            instance->TextValidator,
+            signature,
+            data.data(),
+            data.size(),
+            *instance->Filter);
+    }
+
+    reader.RequireEnd(end, "Subrecord range");
+    record.OnRecordFinished(
+        instance->CharTracker,
+        &instance->DeferredInfoLinks,
+        &instance->DeferredVoiceTypeLinks,
+        &instance->DeferredFactionLinks,
+        &instance->DeferredRaceLinks,
+        recordSignature,
+        nullptr,
+        0);
+}
+
+static void ParseRecord(
+    EspInstance* instance,
+    EspBinaryReader& reader,
+    const char signature[4],
+    std::uint64_t containerEnd,
+    std::uint32_t currentDialFormId,
+    bool insideGroup,
+    EspParseBudget& budget)
+{
+    reader.RequireWithin(containerEnd, sizeof(RecordHeader) - 4, "Record header");
+    RecordHeader header{};
+    std::memcpy(header.Sig, signature, sizeof(header.Sig));
+    header.DataSize = reader.ReadValue<std::uint32_t>("Record data size");
+    header.Flags = reader.ReadValue<std::uint32_t>("Record flags");
+    header.FormID = reader.ReadValue<std::uint32_t>("Record form ID");
+    header.VersionCtrl = reader.ReadValue<std::uint32_t>("Record version control");
+    header.Version = reader.ReadValue<std::uint16_t>("Record version");
+    header.Unknown = reader.ReadValue<std::uint16_t>("Record unknown field");
+    if (header.DataSize > MaxRecordDataSize)
+        reader.Reject("Record data exceeds the configured allocation limit.");
+
+    const std::uint64_t recordEnd = reader.SubrangeEnd(header.DataSize, containerEnd, "Record data");
+    budget.AddRecord(reader);
+    EspRecord record(header.Sig, header.FormID, header.Flags);
+
+    if (std::memcmp(header.Sig, "TES4", 4) == 0)
+    {
+        instance->Filter->FileIsLocalized = (header.Flags & RECORD_FLAG_LOCALIZED) != 0;
+    }
+
+    if (IsCompressed(header))
+    {
+        reader.RequireWithin(recordEnd, sizeof(std::uint32_t), "Compressed record size");
+        const std::uint32_t uncompressedSize =
+            reader.ReadValue<std::uint32_t>("Compressed record uncompressed size");
+        if (uncompressedSize > MaxDecompressedRecordSize)
+            reader.Reject("Decompressed record exceeds the configured allocation limit.");
+
+        const std::size_t compressedSize = static_cast<std::size_t>(recordEnd - reader.Position());
+        std::vector<std::uint8_t> compressed = reader.ReadBytes(
+            compressedSize,
+            MaxRecordDataSize,
+            "Compressed record data");
+        std::vector<std::uint8_t> decompressed;
+        if (!ZlibDecompress(compressed.data(), compressed.size(), decompressed, uncompressedSize))
+            reader.Reject("Compressed record data is invalid.");
+
+        EspBinaryReader decompressedReader(decompressed.data(), decompressed.size());
+        ParseSubRecords(instance, decompressedReader, decompressedReader.Size(), record, header.Sig);
+    }
+    else
+    {
+        ParseSubRecords(instance, reader, recordEnd, record, header.Sig);
+    }
+
+    reader.RequireEnd(recordEnd, "Record data");
+    if (!insideGroup || record.CheckSub())
+        instance->Data->AddRecord(record, *instance->Filter, currentDialFormId);
+}
+
+static void ParseEntries(
+    EspInstance* instance,
+    EspBinaryReader& reader,
+    std::uint64_t end,
+    std::uint32_t currentDialFormId,
+    std::uint32_t depth,
+    EspParseBudget& budget);
+
+static void ParseGroup(
+    EspInstance* instance,
+    EspBinaryReader& reader,
+    std::uint64_t containerEnd,
+    std::uint32_t currentDialFormId,
+    std::uint32_t depth,
+    EspParseBudget& budget)
+{
+    reader.RequireWithin(containerEnd, sizeof(GroupHeader) - 4, "Group header");
+    const std::uint32_t groupSize = reader.ReadValue<std::uint32_t>("Group size");
+    char label[4]{};
+    reader.Read(label, sizeof(label), "Group label");
+    const std::uint32_t groupType = reader.ReadValue<std::uint32_t>("Group type");
+    static_cast<void>(reader.ReadValue<std::uint32_t>("Group stamp"));
+    static_cast<void>(reader.ReadValue<std::uint32_t>("Group unknown field"));
+    if (groupSize < sizeof(GroupHeader))
+        reader.Reject("Group size is smaller than its header.");
+
+    budget.AddGroup(reader, depth);
+    instance->Data->IncrementGrupCount();
+    const std::uint64_t groupEnd = reader.SubrangeEnd(
+        groupSize - sizeof(GroupHeader),
+        containerEnd,
+        "Group data");
+
+    std::uint32_t nextDialFormId = currentDialFormId;
+    if (groupType != 0)
+        std::memcpy(&nextDialFormId, label, sizeof(nextDialFormId));
+
+    ParseEntries(instance, reader, groupEnd, nextDialFormId, depth, budget);
+    reader.RequireEnd(groupEnd, "Group data");
+}
+
+static void ParseEntries(
+    EspInstance* instance,
+    EspBinaryReader& reader,
+    std::uint64_t end,
+    std::uint32_t currentDialFormId,
+    std::uint32_t depth,
+    EspParseBudget& budget)
+{
+    while (reader.Position() < end)
+    {
+        reader.RequireWithin(end, 4, "Record or group signature");
+        char signature[4]{};
+        reader.Read(signature, sizeof(signature), "Record or group signature");
+        if (IsGRUP(signature))
+            ParseGroup(instance, reader, end, currentDialFormId, depth + 1, budget);
         else
-        {
-            if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
-            RecordHeader hdr{};
-            std::memcpy(hdr.Sig, sig, 4);
-            Read(f, hdr.DataSize); Read(f, hdr.Flags); Read(f, hdr.FormID); Read(f, hdr.VersionCtrl); Read(f, hdr.Version); Read(f, hdr.Unknown);
-            uint32_t recordTotalSize = 24 + hdr.DataSize;
-            if (recordTotalSize > state.remaining) { groupStack.pop(); continue; }
-
-            EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
-
-            // === REMOVED: ParentDialFormID assignment (useless) ===
-            // No longer set ParentDialFormID or HasDialContext here – they are set during subrecord parsing.
-
-            if (IsCompressed(hdr))
-            {
-                if (hdr.DataSize < 4) f.seekg(hdr.DataSize, std::ios::cur);
-                else {
-                    uint32_t uncompressedSize = 0; Read(f, uncompressedSize);
-                    uint32_t compressedSize = hdr.DataSize - 4;
-                    std::vector<uint8_t> compressed(compressedSize);
-                    f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
-                    std::vector<uint8_t> decompressed;
-                    if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(Instance, decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
-                }
-            }
-            else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
-
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, state.currentDialFormID);
-            state.remaining -= recordTotalSize;
-        }
+            ParseRecord(instance, reader, signature, end, currentDialFormId, depth != 0, budget);
     }
-}
 
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize, uint32_t currentDialFormID)
-{
-    uint32_t bytesRead = 0;
-    while (bytesRead < groupSize && f.good())
-    {
-        if (groupSize - bytesRead < 4) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-        char sig[4];
-        if (!f.read(sig, 4)) break;
-        bytesRead += 4;
-
-        if (IsGRUP(sig))
-        {
-            if (groupSize - bytesRead < 20) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-            GroupHeader gh{};
-            std::memcpy(gh.Sig, sig, 4);
-            Read(f, gh.Size);
-            f.read(gh.Label, 4);
-            Read(f, gh.GroupType);
-            Read(f, gh.Stamp);
-            Read(f, gh.Unknown);
-            bytesRead += 20;
-            if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-            Instance->Data->IncrementGrupCount();
-            uint32_t contentSize = gh.Size - 24;
-            ParseCellGroup_Inst(Instance, f, contentSize, currentDialFormID);  //Pass currentDialFormID
-            bytesRead += contentSize;
-        }
-        else
-        {
-            if (groupSize - bytesRead < 20) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-            RecordHeader hdr{};
-            std::memcpy(hdr.Sig, sig, 4);
-            Read(f, hdr.DataSize);
-            Read(f, hdr.Flags);
-            Read(f, hdr.FormID);
-            Read(f, hdr.VersionCtrl);
-            Read(f, hdr.Version);
-            Read(f, hdr.Unknown);
-            bytesRead += 20;
-            uint32_t recordTotalSize = hdr.DataSize;
-            if (recordTotalSize > (groupSize - bytesRead)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-
-            EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
-            if (IsCompressed(hdr))
-            {
-                if (hdr.DataSize < 4) f.seekg(hdr.DataSize, std::ios::cur);
-                else {
-                    uint32_t uncompressedSize = 0;
-                    Read(f, uncompressedSize);
-                    uint32_t compressedSize = hdr.DataSize - 4;
-                    std::vector<uint8_t> compressed(compressedSize);
-                    f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
-                    std::vector<uint8_t> decompressed;
-                    if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(Instance, decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
-                }
-            }
-            else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
-
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, currentDialFormID);
-            bytesRead += recordTotalSize;
-        }
-    }
-    if (bytesRead < groupSize) f.seekg(groupSize - bytesRead, std::ios::cur);
+    reader.RequireEnd(end, "Plugin container");
 }
 
 // ============================================================
@@ -461,9 +450,18 @@ static inline uint64_t MakeRecordKey(uint32_t FormID, const char Sig[4])
     uint32_t SigInt = 0; std::memcpy(&SigInt, Sig, 4);
     return (static_cast<uint64_t>(FormID) << 32) | static_cast<uint64_t>(SigInt);
 }
-static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig) { return MakeRecordKey(FormID, Sig.c_str()); }
+static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig)
+{
+    return MakeRecordKey(FormID, Sig.c_str());
+}
 
-struct OriginalSubRecord { std::string Sig; int OccurrenceIndex; size_t OffsetInData; uint16_t Size; };
+struct OriginalSubRecord
+{
+    std::string Sig;
+    int OccurrenceIndex;
+    std::size_t SerializedOffset;
+    std::size_t SerializedSize;
+};
 
 static std::unordered_map<uint64_t, const EspRecord*> BuildModifiedIndex(EspInstance* inst)
 {
@@ -482,18 +480,37 @@ static std::vector<OriginalSubRecord> ParseOriginalSubRecords(const uint8_t* dat
 {
     std::vector<OriginalSubRecord> result;
     std::unordered_map<std::string, int> occ;
-    size_t offset = 0;
-    while (offset + sizeof(SubRecordHeader) <= dataSize)
+    EspBinaryReader reader(data, dataSize);
+    while (reader.Remaining() != 0)
     {
-        const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
-        if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
+        const std::size_t serializedOffset = static_cast<std::size_t>(reader.Position());
+        reader.RequireWithin(reader.Size(), sizeof(SubRecordHeader), "Original subrecord header");
+        char signature[4]{};
+        reader.Read(signature, sizeof(signature), "Original subrecord signature");
+        std::uint32_t size = reader.ReadValue<std::uint16_t>("Original subrecord size");
+        if (std::memcmp(signature, "XXXX", 4) == 0)
+        {
+            if (size != sizeof(std::uint32_t))
+                reader.Reject("Original extended subrecord marker has an invalid size.");
+
+            size = reader.ReadValue<std::uint32_t>("Original extended subrecord size");
+            reader.RequireWithin(reader.Size(), sizeof(SubRecordHeader), "Original extended subrecord header");
+            reader.Read(signature, sizeof(signature), "Original extended subrecord signature");
+            if (reader.ReadValue<std::uint16_t>("Original extended encoded size") != 0)
+                reader.Reject("Original extended subrecord has a non-zero encoded size.");
+        }
+
+        if (size > MaxSubRecordDataSize)
+            reader.Reject("Original subrecord exceeds the configured allocation limit.");
+        reader.RequireWithin(reader.Size(), size, "Original subrecord data");
+        reader.Skip(size, "Original subrecord data");
+
         OriginalSubRecord osr;
-        osr.Sig = std::string(sub->Sig, 4);
+        osr.Sig = std::string(signature, 4);
         osr.OccurrenceIndex = occ[osr.Sig]++;
-        osr.OffsetInData = offset;
-        osr.Size = sub->Size;
+        osr.SerializedOffset = serializedOffset;
+        osr.SerializedSize = static_cast<std::size_t>(reader.Position()) - serializedOffset;
         result.push_back(osr);
-        offset += sizeof(SubRecordHeader) + sub->Size;
     }
     return result;
 }
@@ -519,127 +536,236 @@ static std::vector<uint8_t> ModifySubRecordsWithFilter(
     auto originalSubs = ParseOriginalSubRecords(originalData, dataSize);
     for (const auto& osr : originalSubs)
     {
-        const SubRecordData* modified = FindModifiedSubRecord(modifiedIndex, parentSig, formID, osr.Sig, osr.OccurrenceIndex);
+        const SubRecordData* modified = FindModifiedSubRecord(
+            modifiedIndex,
+            parentSig,
+            formID,
+            osr.Sig,
+            osr.OccurrenceIndex);
         if (modified)
         {
-            if (modified->Data.size() > 0xFFFF) {
-                result.insert(result.end(), originalData + osr.OffsetInData, originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
-                continue;
+            if (modified->Data.size() > MaxSubRecordDataSize)
+                throw std::length_error("Modified subrecord exceeds the configured allocation limit.");
+
+            if (modified->Data.size() > (std::numeric_limits<std::uint16_t>::max)())
+            {
+                SubRecordHeader extendedHeader{};
+                std::memcpy(extendedHeader.Sig, "XXXX", sizeof(extendedHeader.Sig));
+                extendedHeader.Size = sizeof(std::uint32_t);
+                result.insert(
+                    result.end(),
+                    reinterpret_cast<const std::uint8_t*>(&extendedHeader),
+                    reinterpret_cast<const std::uint8_t*>(&extendedHeader) + sizeof(extendedHeader));
+                const std::uint32_t extendedSize = static_cast<std::uint32_t>(modified->Data.size());
+                result.insert(
+                    result.end(),
+                    reinterpret_cast<const std::uint8_t*>(&extendedSize),
+                    reinterpret_cast<const std::uint8_t*>(&extendedSize) + sizeof(extendedSize));
             }
-            SubRecordHeader newHeader; std::memcpy(newHeader.Sig, osr.Sig.c_str(), 4);
-            newHeader.Size = static_cast<uint16_t>(modified->Data.size());
-            result.insert(result.end(), reinterpret_cast<uint8_t*>(&newHeader), reinterpret_cast<uint8_t*>(&newHeader) + sizeof(newHeader));
+
+            SubRecordHeader newHeader{};
+            std::memcpy(newHeader.Sig, osr.Sig.c_str(), sizeof(newHeader.Sig));
+            newHeader.Size = modified->Data.size() > (std::numeric_limits<std::uint16_t>::max)()
+                ? 0
+                : static_cast<std::uint16_t>(modified->Data.size());
+            result.insert(
+                result.end(),
+                reinterpret_cast<const std::uint8_t*>(&newHeader),
+                reinterpret_cast<const std::uint8_t*>(&newHeader) + sizeof(newHeader));
             result.insert(result.end(), modified->Data.begin(), modified->Data.end());
         }
-        else result.insert(result.end(), originalData + osr.OffsetInData, originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
+        else
+        {
+            result.insert(
+                result.end(),
+                originalData + osr.SerializedOffset,
+                originalData + osr.SerializedOffset + osr.SerializedSize);
+        }
+
+        if (result.size() > MaxDecompressedRecordSize)
+            throw std::length_error("Modified record exceeds the configured allocation limit.");
     }
     return result;
 }
 
-// Forward declare ProcessGRUP_Inst
-static bool ProcessGRUP_Inst(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4], const std::unordered_map<uint64_t, const EspRecord*>& idx);
-static bool ProcessGRUPContent_Inst(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize, const std::unordered_map<uint64_t, const EspRecord*>& idx);
+static void WriteOutput(std::ofstream& output, const void* data, std::size_t size, const char* context)
+{
+    if (size > static_cast<std::size_t>((std::numeric_limits<std::streamsize>::max)()))
+        throw std::length_error(std::string(context) + " exceeds the stream write limit.");
+    if (size == 0)
+        return;
 
-static bool ProcessRecord_Inst(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
+    output.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+    if (!output)
+        throw std::runtime_error(std::string(context) + " could not be written completely.");
+}
+
+static void ProcessGroup(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t containerEnd,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth);
+
+static void ProcessContent(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t end,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth);
+
+static void ProcessRecord(EspBinaryReader& reader, std::ofstream& output, const char Sig[4],
+    std::uint64_t containerEnd,
     const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
 {
-    RecordHeader HDR{}; std::memcpy(HDR.Sig, Sig, 4);
-    Read(Fin, HDR.DataSize); Read(Fin, HDR.Flags); Read(Fin, HDR.FormID); Read(Fin, HDR.VersionCtrl); Read(Fin, HDR.Version); Read(Fin, HDR.Unknown);
-    std::vector<uint8_t> OriginalData(HDR.DataSize);
-    Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+    reader.RequireWithin(containerEnd, sizeof(RecordHeader) - 4, "Saved record header");
+    RecordHeader HDR{};
+    std::memcpy(HDR.Sig, Sig, sizeof(HDR.Sig));
+    HDR.DataSize = reader.ReadValue<std::uint32_t>("Saved record data size");
+    HDR.Flags = reader.ReadValue<std::uint32_t>("Saved record flags");
+    HDR.FormID = reader.ReadValue<std::uint32_t>("Saved record form ID");
+    HDR.VersionCtrl = reader.ReadValue<std::uint32_t>("Saved record version control");
+    HDR.Version = reader.ReadValue<std::uint16_t>("Saved record version");
+    HDR.Unknown = reader.ReadValue<std::uint16_t>("Saved record unknown field");
+    if (HDR.DataSize > MaxRecordDataSize)
+        reader.Reject("Saved record exceeds the configured allocation limit.");
+    const std::uint64_t recordEnd = reader.SubrangeEnd(HDR.DataSize, containerEnd, "Saved record data");
+    std::vector<uint8_t> OriginalData = reader.ReadBytes(
+        HDR.DataSize,
+        MaxRecordDataSize,
+        "Saved record data");
 
     if (modifiedIndex.find(MakeRecordKey(HDR.FormID, Sig)) == modifiedIndex.end())
     {
-        Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
-        Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
-        return true;
+        WriteOutput(output, &HDR, sizeof(HDR), "Saved record header");
+        WriteOutput(output, OriginalData.data(), OriginalData.size(), "Saved record data");
+        reader.RequireEnd(recordEnd, "Saved record data");
+        return;
     }
 
     std::vector<uint8_t> WorkingData;
     bool WasCompressed = IsCompressed(HDR);
     if (WasCompressed)
     {
-        if (HDR.DataSize < 4) { Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR)); Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize); return true; }
-        uint32_t UncompressedSize; std::memcpy(&UncompressedSize, OriginalData.data(), 4);
-        if (!ZlibDecompress(OriginalData.data() + 4, OriginalData.size() - 4, WorkingData, UncompressedSize)) return false;
+        if (HDR.DataSize < 4)
+            reader.Reject("Saved compressed record has no uncompressed-size field.");
+        uint32_t UncompressedSize = 0;
+        std::memcpy(&UncompressedSize, OriginalData.data(), sizeof(UncompressedSize));
+        if (UncompressedSize > MaxDecompressedRecordSize ||
+            !ZlibDecompress(
+                OriginalData.data() + sizeof(UncompressedSize),
+                OriginalData.size() - sizeof(UncompressedSize),
+                WorkingData,
+                UncompressedSize))
+        {
+            reader.Reject("Saved compressed record data is invalid.");
+        }
     }
     else WorkingData = OriginalData;
 
-    WorkingData = ModifySubRecordsWithFilter(WorkingData.data(), WorkingData.size(), std::string(Sig, 4), HDR.FormID, modifiedIndex);
+    WorkingData = ModifySubRecordsWithFilter(
+        WorkingData.data(),
+        WorkingData.size(),
+        std::string(Sig, 4),
+        HDR.FormID,
+        modifiedIndex);
 
     std::vector<uint8_t> FinalData;
     if (WasCompressed)
     {
         std::vector<uint8_t> Compressed;
-        if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed)) return false;
+        if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed))
+            throw std::runtime_error("Modified record compression failed.");
+        if (Compressed.size() > MaxRecordDataSize - sizeof(std::uint32_t))
+            throw std::length_error("Modified compressed record exceeds the configured limit.");
         FinalData.resize(4 + Compressed.size());
-        uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
+        const uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
         std::memcpy(FinalData.data(), &UncompSize, 4);
         std::memcpy(FinalData.data() + 4, Compressed.data(), Compressed.size());
     }
     else FinalData = WorkingData;
 
+    if (FinalData.size() > MaxRecordDataSize ||
+        FinalData.size() > (std::numeric_limits<std::uint32_t>::max)())
+    {
+        throw std::length_error("Modified record exceeds the ESP record-size limit.");
+    }
     HDR.DataSize = static_cast<uint32_t>(FinalData.size());
-    Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
-    Fout.write(reinterpret_cast<const char*>(FinalData.data()), FinalData.size());
-    return true;
+    WriteOutput(output, &HDR, sizeof(HDR), "Modified record header");
+    WriteOutput(output, FinalData.data(), FinalData.size(), "Modified record data");
+    reader.RequireEnd(recordEnd, "Saved record data");
 }
 
-static bool ProcessGRUP_Inst(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
-    const std::unordered_map<uint64_t, const EspRecord*>& idx)
+static void ProcessGroup(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t containerEnd,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth)
 {
-    GroupHeader GH{}; std::memcpy(GH.Sig, Sig, 4);
-    Read(Fin, GH.Size); Fin.read(GH.Label, 4); Read(Fin, GH.GroupType); Read(Fin, GH.Stamp); Read(Fin, GH.Unknown);
+    if (depth > MaxGroupDepth)
+        reader.Reject("Saved group nesting exceeds the configured limit.");
+    reader.RequireWithin(containerEnd, sizeof(GroupHeader) - 4, "Saved group header");
+    GroupHeader header{};
+    std::memcpy(header.Sig, "GRUP", sizeof(header.Sig));
+    header.Size = reader.ReadValue<std::uint32_t>("Saved group size");
+    reader.Read(header.Label, sizeof(header.Label), "Saved group label");
+    header.GroupType = reader.ReadValue<std::uint32_t>("Saved group type");
+    header.Stamp = reader.ReadValue<std::uint32_t>("Saved group stamp");
+    header.Unknown = reader.ReadValue<std::uint32_t>("Saved group unknown field");
+    if (header.Size < sizeof(GroupHeader))
+        reader.Reject("Saved group size is smaller than its header.");
+    const std::uint64_t groupEnd = reader.SubrangeEnd(
+        header.Size - sizeof(GroupHeader),
+        containerEnd,
+        "Saved group data");
 
-    if (GH.Size < 24) return false;
+    const std::streampos headerPosition = output.tellp();
+    if (headerPosition < 0)
+        throw std::runtime_error("Unable to determine the saved group header position.");
+    WriteOutput(output, &header, sizeof(header), "Saved group header");
+    const std::streampos contentStart = output.tellp();
+    if (contentStart < 0)
+        throw std::runtime_error("Unable to determine the saved group content position.");
 
-    std::streampos headerPos = Fout.tellp();
-    Fout.write(reinterpret_cast<char*>(&GH), sizeof(GH));
-    std::streampos contentStart = Fout.tellp();
-
-    if (!ProcessGRUPContent_Inst(Fin, Fout, GH.Size - 24, idx)) return false;
-
-    std::streampos contentEnd = Fout.tellp();
-    uint32_t actualGrupSize = static_cast<uint32_t>(contentEnd - contentStart) + 24;
-    if (actualGrupSize != GH.Size)
+    ProcessContent(reader, output, groupEnd, index, depth);
+    reader.RequireEnd(groupEnd, "Saved group data");
+    const std::streampos contentEnd = output.tellp();
+    if (contentEnd < contentStart)
+        throw std::runtime_error("Saved group output position is invalid.");
+    const std::uint64_t contentSize = static_cast<std::uint64_t>(contentEnd - contentStart);
+    if (contentSize > (std::numeric_limits<std::uint32_t>::max)() - sizeof(GroupHeader))
+        throw std::length_error("Saved group exceeds the ESP group-size limit.");
+    const uint32_t actualGroupSize = static_cast<uint32_t>(contentSize + sizeof(GroupHeader));
+    if (actualGroupSize != header.Size)
     {
-        std::streampos saved = Fout.tellp();
-        Fout.seekp(headerPos + std::streamoff(4));
-        Fout.write(reinterpret_cast<char*>(&actualGrupSize), sizeof(actualGrupSize));
-        Fout.seekp(saved);
+        const std::streampos saved = output.tellp();
+        output.seekp(headerPosition + std::streamoff(4));
+        WriteOutput(output, &actualGroupSize, sizeof(actualGroupSize), "Updated group size");
+        output.seekp(saved);
+        if (!output)
+            throw std::runtime_error("Unable to restore the saved group output position.");
     }
-    return true;
 }
 
-static bool ProcessGRUPContent_Inst(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize,
-    const std::unordered_map<uint64_t, const EspRecord*>& idx)
+static void ProcessContent(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t end,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth)
 {
-    int64_t processed = 0;
-    while (processed < ContentSize && Fin.good())
+    while (reader.Position() < end)
     {
-        if (ContentSize - processed < 4) { Fin.seekg(ContentSize - processed, std::ios::cur); processed = ContentSize; break; }
-        char Sig[4];
-        std::streampos before = Fin.tellg();
-        if (!Fin.read(Sig, 4)) break;
-        bool ok = IsGRUP(Sig) ? ProcessGRUP_Inst(Fin, Fout, Sig, idx) : ProcessRecord_Inst(Fin, Fout, Sig, idx);
-        if (!ok) return false;
-        processed += static_cast<int64_t>(static_cast<int64_t>(Fin.tellg()) - static_cast<int64_t>(before));
+        reader.RequireWithin(end, 4, "Saved record or group signature");
+        char signature[4]{};
+        reader.Read(signature, sizeof(signature), "Saved record or group signature");
+        if (IsGRUP(signature))
+            ProcessGroup(reader, output, end, index, depth + 1);
+        else
+            ProcessRecord(reader, output, signature, end, index);
     }
-    if (processed < ContentSize) { Fin.seekg(ContentSize - processed, std::ios::cur); }
-    else if (processed > ContentSize) { Fin.seekg(-(processed - ContentSize), std::ios::cur); }
-    return true;
-}
-
-static bool ProcessFileContent_Inst(std::ifstream& Fin, std::ofstream& Fout,
-    const std::unordered_map<uint64_t, const EspRecord*>& idx)
-{
-    while (Fin.good() && Fin.peek() != EOF)
-    {
-        char Sig[4]; if (!Fin.read(Sig, 4)) break;
-        bool ok = IsGRUP(Sig) ? ProcessGRUP_Inst(Fin, Fout, Sig, idx) : ProcessRecord_Inst(Fin, Fout, Sig, idx);
-        if (!ok) return false;
-    }
-    return true;
+    reader.RequireEnd(end, "Saved plugin container");
 }
 
 static std::mutex SaveEspLock;
@@ -652,8 +778,10 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
 
     int Wlen = MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, NULL, 0);
     if (Wlen == 0) return false;
-    std::wstring WSavePath(Wlen - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, &WSavePath[0], Wlen);
+    std::wstring WSavePath(Wlen, 0);
+    if (MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, &WSavePath[0], Wlen) == 0)
+        return false;
+    WSavePath.resize(static_cast<std::size_t>(Wlen - 1));
 
     if (WSavePath == inst->LastSetPath) return false;
 
@@ -668,11 +796,18 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
     Fin.rdbuf()->pubsetbuf(ReadBuf, sizeof(ReadBuf));
     Fout.rdbuf()->pubsetbuf(WriteBuf, sizeof(WriteBuf));
 
-    auto ModifiedIndex = BuildModifiedIndex(inst);
-    bool Success = ProcessFileContent_Inst(Fin, Fout, ModifiedIndex);
-
-    Fin.close(); Fout.close();
-    return Success;
+    try
+    {
+        EspBinaryReader reader(Fin);
+        auto ModifiedIndex = BuildModifiedIndex(inst);
+        ProcessContent(reader, Fout, reader.Size(), ModifiedIndex, 0);
+        Fout.flush();
+        return static_cast<bool>(Fout);
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 // ============================================================
@@ -779,7 +914,17 @@ extern "C"
 
 // ── Implementation ────────────────────────────────────────────
 
-EspInstance* C_CreateInstance() { return new EspInstance(); }
+EspInstance* C_CreateInstance()
+{
+    try
+    {
+        return new EspInstance();
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
+}
 void         C_DestroyInstance(EspInstance* h) { delete h; }
 
 const char* C_GetVersion() { return Version.c_str(); }
@@ -953,34 +1098,47 @@ int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSub
 
 int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
 {
-    if (!Instance) return -1;
+    if (!Instance || !EspPath) return -1;
 
-    // Reset per-read state
-    delete Instance->TextValidator; Instance->TextValidator = new ESP_HeuristicAnalysis();
-    delete Instance->CharTracker;   Instance->CharTracker = new CharacterTracker();
-    Instance->ClearData();
-
-    Instance->LastSetPath = EspPath;
-    Instance->Data = new EspData();
-
-    std::ifstream Stream(EspPath, std::ios::binary);
-    if (!Stream.is_open()) return 1;
-
-    while (Stream.good() && Stream.peek() != EOF)
+    try
     {
-        char Sig[4];
-        if (!Stream.read(Sig, 4)) break;
+        EspInstance parsed;
+        parsed.Filter->AllowAll = Instance->Filter->AllowAll;
+        parsed.Filter->LoadFromConfig(Instance->Filter->CurrentConfig);
+        parsed.Data = new EspData();
 
-        if (IsGRUP(Sig)) ParseGroupIterative_Inst(Instance, Stream);
-        else ParseRecord_Inst(Instance, Stream, Sig, 0);
+        std::ifstream stream(EspPath, std::ios::binary);
+        if (!stream.is_open()) return 1;
+
+        EspBinaryReader reader(stream);
+        EspParseBudget budget;
+        ParseEntries(&parsed, reader, reader.Size(), 0, 0, budget);
+        if (!parsed.Data->HasTES4Header)
+            reader.Reject("Plugin does not contain a TES4 header record.");
+
+        FlushDeferredInfoLinks_Inst(&parsed);
+        parsed.CharacterCacheDirty = true;
+        parsed.Data->BuildDialTopologyIndex();
+        parsed.LastSetPath = EspPath;
+
+        std::swap(Instance->TextValidator, parsed.TextValidator);
+        std::swap(Instance->CharTracker, parsed.CharTracker);
+        std::swap(Instance->Data, parsed.Data);
+        std::swap(Instance->CharacterIndexCache, parsed.CharacterIndexCache);
+        std::swap(Instance->CharacterCacheDirty, parsed.CharacterCacheDirty);
+        std::swap(Instance->DeferredInfoLinks, parsed.DeferredInfoLinks);
+        std::swap(Instance->DeferredVoiceTypeLinks, parsed.DeferredVoiceTypeLinks);
+        std::swap(Instance->DeferredFactionLinks, parsed.DeferredFactionLinks);
+        std::swap(Instance->DeferredRaceLinks, parsed.DeferredRaceLinks);
+        std::swap(Instance->LastSetPath, parsed.LastSetPath);
+        Instance->Filter->FileIsLocalized = parsed.Filter->FileIsLocalized;
+
+        return 0;
     }
-
-    FlushDeferredInfoLinks_Inst(Instance);
-    Instance->CharacterCacheDirty = true;
-
-    Instance->Data->BuildDialTopologyIndex();
-
-    return 0;
+    catch (...)
+    {
+        return 1;
+    }
 }
 
 bool C_SaveEsp(EspInstance* h, const char* Utf8Path)
