@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore miniz
+        shell: pwsh
+        run: .\scripts\Restore-Miniz.ps1
+
+      - name: Build x64 release
+        shell: pwsh
+        run: msbuild .\EspReader.sln /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $artifact = ".\x64\Release\EspReader.dll"
+          if (-not (Test-Path -LiteralPath $artifact)) {
+              throw "Release artifact was not produced: $artifact"
+          }
+
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  EspReader.dll" | Set-Content "$artifact.sha256" -Encoding ascii
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            ".\x64\Release\EspReader.dll" `
+            ".\x64\Release\EspReader.dll.sha256" `
+            --generate-notes `
+            --verify-tag

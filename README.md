@@ -17,9 +17,23 @@ EspReader is designed to replace the Lexicon AI Translator EspReader.cs class.
 
 This library was partially inspired by the logic of [SSE-Auto-Translator](https://github.com/Cutleast/SSE-Auto-Translator) and is used here with the explicit permission of its author.
 
-## Setup Instructions
+## Building from source
 
-To use EspReader, simply download the latest release of [miniz](https://github.com/richgel999/miniz/releases) and copy `miniz.c` and `miniz.h` into the `EspReader` directory.
+EspReader requires Visual Studio 2022 with the Desktop development with C++ workload.
+
+Restore the pinned miniz sources and build the x64 Release configuration:
+
+```powershell
+.\scripts\Restore-Miniz.ps1
+msbuild .\EspReader.sln /m /p:Configuration=Release /p:Platform=x64
+```
+
+The resulting library is written to `x64\Release\EspReader.dll`.
+
+## Releases
+
+Push a version tag matching `v*` to build the x64 library and create a GitHub Release. Each release contains
+`EspReader.dll` and `EspReader.dll.sha256`.
 
 
 ## Contributors:

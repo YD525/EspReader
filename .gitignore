@@ -1,8 +1,24 @@
-# ===== Visual Studio Build Artifacts =====
 .vs/
-bin/
-obj/
+[Bb]in/
+[Oo]bj/
+x64/
+Win32/
+*.aps
+*.exp
+*.iobj
+*.ilk
+*.ipdb
+*.lastbuildstate
+*.lib
+*.log
+*.obj
+*.pdb
+*.recipe
+*.res
+*.suo
+*.tlog
+*.user
+*.VC.db
 
-# Ignore miniz files
 EspReader/miniz.c
 EspReader/miniz.h
