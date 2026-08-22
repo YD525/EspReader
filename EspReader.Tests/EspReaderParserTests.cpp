@@ -19,6 +19,7 @@
 #include <windows.h>
 
 #include "../EspReader/EspReaderApi.h"
+#include "../EspReader/EspParser.h"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
@@ -461,6 +462,32 @@ namespace EspReaderTests
     TEST_CLASS(EspReaderParserTests)
     {
     public:
+        TEST_METHOD(ParsesValidInputThroughTheInternalCppApi)
+        {
+            const std::vector<std::uint8_t> fixture = CreateMinimalFixture();
+            RecordFilter filter;
+            filter.AllowAll = true;
+
+            const EspParsedDocument document = EspParser::Parse(fixture.data(), fixture.size(), filter);
+
+            Assert::IsTrue(document.Data().HasTES4Header);
+            Assert::AreEqual<std::size_t>(1, document.Data().Records.size());
+            Assert::AreEqual(std::string("TES4"), document.Data().Records.front().Sig);
+        }
+
+        TEST_METHOD(RejectsMalformedInputThroughTheInternalCppApi)
+        {
+            std::vector<std::uint8_t> fixture = CreateMinimalFixture();
+            fixture.pop_back();
+            RecordFilter filter;
+            filter.AllowAll = true;
+
+            Assert::ExpectException<std::runtime_error>([&fixture, &filter]()
+            {
+                static_cast<void>(EspParser::Parse(fixture.data(), fixture.size(), filter));
+            });
+        }
+
         TEST_METHOD(PublicAbiHeaderMatchesBinaryContract)
         {
             static_assert(sizeof(EspReaderBool) == 1, "EspReaderBool ABI size changed.");
@@ -510,7 +537,7 @@ namespace EspReaderTests
             Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_OK, api.LastStatus());
             const int versionLength = api.VersionLength();
             Assert::AreEqual(7, versionLength);
-            Assert::AreEqual(std::string("1.0.0.5"), std::string(api.Version(), versionLength));
+            Assert::AreEqual(std::string("1.0.0.6"), std::string(api.Version(), versionLength));
 
             Assert::AreEqual(-1, api.Read(nullptr, nullptr));
             Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_INVALID_ARGUMENT, api.LastStatus());

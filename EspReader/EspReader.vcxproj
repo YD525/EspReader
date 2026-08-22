@@ -140,6 +140,8 @@
   <ItemGroup>
     <ClCompile Include="CharacterTracker.h" />
     <ClCompile Include="ESPHeuristicAnalysis.cpp" />
+    <ClCompile Include="EspCompression.cpp" />
+    <ClCompile Include="EspParser.cpp" />
     <ClCompile Include="EspReader.cpp" />
     <ClCompile Include="miniz.c">
       <DisableSpecificWarnings>4127;28182;6386;%(DisableSpecificWarnings)</DisableSpecificWarnings>
@@ -148,6 +150,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EspBinaryReader.h" />
+    <ClInclude Include="EspCompression.h" />
+    <ClInclude Include="EspFormat.h" />
+    <ClInclude Include="EspParser.h" />
     <ClInclude Include="EspReaderApi.h" />
     <ClInclude Include="EspRecord.cpp" />
     <ClInclude Include="miniz.h" />

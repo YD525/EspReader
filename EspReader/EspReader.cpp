@@ -6,7 +6,6 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include "miniz.h"
 #include <random>
 #include <mutex>
 #include <limits>
@@ -18,74 +17,38 @@
 #include <windows.h>
 
 #include "EspReaderApi.h"
-#include "EspRecord.cpp"
 #include "EspBinaryReader.h"
+#include "EspCompression.h"
+#include "EspFormat.h"
+#include "EspParser.h"
 
 class EspInstance
 {
 public:
-    ESP_HeuristicAnalysis* TextValidator = nullptr;
-    CharacterTracker* CharTracker = nullptr;
-    EspData* Data = nullptr;
-    RecordFilter* Filter = nullptr;
+    std::unique_ptr<ESP_HeuristicAnalysis> TextValidator;
+    std::unique_ptr<CharacterTracker> CharTracker;
+    std::unique_ptr<EspData> Data;
+    std::unique_ptr<RecordFilter> Filter;
     std::wstring            LastSetPath;
 
     // Character index cache
     std::vector<const CharacterRecord*> CharacterIndexCache;
     bool                    CharacterCacheDirty = true;
 
-    // Deferred link maps
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredInfoLinks;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredVoiceTypeLinks;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredFactionLinks;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredRaceLinks;
-
     EspInstance()
+        : TextValidator(std::make_unique<ESP_HeuristicAnalysis>()),
+          CharTracker(std::make_unique<CharacterTracker>()),
+          Filter(std::make_unique<RecordFilter>())
     {
-        try
-        {
-            TextValidator = new ESP_HeuristicAnalysis();
-            CharTracker = new CharacterTracker();
-            Filter = new RecordFilter();
-        }
-        catch (...)
-        {
-            delete TextValidator;
-            delete CharTracker;
-            delete Filter;
-            throw;
-        }
-    }
-
-    ~EspInstance() { ReleaseAll(); }
-
-    void ReleaseAll()
-    {
-        delete TextValidator; TextValidator = nullptr;
-        delete CharTracker;   CharTracker = nullptr;
-        delete Data;          Data = nullptr;
-        delete Filter;        Filter = nullptr;
-
-        CharacterIndexCache.clear();
-        CharacterCacheDirty = true;
-        DeferredInfoLinks.clear();
-        DeferredVoiceTypeLinks.clear();
-        DeferredFactionLinks.clear();
-        DeferredRaceLinks.clear();
-        LastSetPath.clear();
     }
 
     // Reset data only (keep filter/validator alive)
     void ClearData()
     {
-        delete Data; Data = nullptr;
+        Data.reset();
 
         CharacterIndexCache.clear();
         CharacterCacheDirty = true;
-        DeferredInfoLinks.clear();
-        DeferredVoiceTypeLinks.clear();
-        DeferredFactionLinks.clear();
-        DeferredRaceLinks.clear();
         LastSetPath.clear();
     }
 };
@@ -93,318 +56,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.0.0.5";
-
-// ============================================================
-//  Forward declarations (parsing helpers – unchanged logic)
-// ============================================================
-#pragma pack(push,1)
-struct RecordHeader {
-    char     Sig[4];
-    uint32_t DataSize;
-    uint32_t Flags;
-    uint32_t FormID;
-    uint32_t VersionCtrl;
-    uint16_t Version;
-    uint16_t Unknown;
-};
-#pragma pack(pop)
-
-#pragma pack(push,1)
-struct GroupHeader {
-    char     Sig[4];
-    uint32_t Size;
-    char     Label[4];
-    uint32_t GroupType;
-    uint32_t Stamp;
-    uint32_t Unknown;
-};
-#pragma pack(pop)
-
-#pragma pack(push,1)
-struct SubRecordHeader {
-    char     Sig[4];
-    uint16_t Size;
-};
-#pragma pack(pop)
-
-constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
-constexpr uint32_t RECORD_FLAG_LOCALIZED = 0x00000080; // TES4 header only
-
-inline bool IsGRUP(const char sig[4]) { return std::memcmp(sig, "GRUP", 4) == 0; }
-inline bool IsCompressed(const RecordHeader& hdr) { return (hdr.Flags & RECORD_FLAG_COMPRESSED) != 0; }
-
-namespace
-{
-    constexpr std::size_t MaxRecordDataSize = 256ULL * 1024ULL * 1024ULL;
-    constexpr std::size_t MaxDecompressedRecordSize = 512ULL * 1024ULL * 1024ULL;
-    constexpr std::size_t MaxSubRecordDataSize = 256ULL * 1024ULL * 1024ULL;
-    constexpr std::uint32_t MaxGroupDepth = 128;
-    constexpr std::uint64_t MaxRecordCount = 10'000'000;
-    constexpr std::uint64_t MaxGroupCount = 1'000'000;
-
-    struct EspParseBudget
-    {
-        std::uint64_t RecordCount = 0;
-        std::uint64_t GroupCount = 0;
-
-        void AddRecord(EspBinaryReader& reader)
-        {
-            if (++RecordCount > MaxRecordCount)
-                reader.Reject("Plugin record count exceeds the configured limit.");
-        }
-
-        void AddGroup(EspBinaryReader& reader, std::uint32_t depth)
-        {
-            if (depth > MaxGroupDepth)
-                reader.Reject("Plugin group nesting exceeds the configured limit.");
-            if (++GroupCount > MaxGroupCount)
-                reader.Reject("Plugin group count exceeds the configured limit.");
-        }
-    };
-}
-
-bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out, size_t uncompressedSize)
-{
-    if (uncompressedSize > MaxDecompressedRecordSize || (srcSize != 0 && src == nullptr))
-        return false;
-
-    out.resize(uncompressedSize);
-    size_t ret = tinfl_decompress_mem_to_mem(out.data(), uncompressedSize, src, srcSize, TINFL_FLAG_PARSE_ZLIB_HEADER);
-    return ret == uncompressedSize;
-}
-
-bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
-{
-    if (srcSize > static_cast<size_t>((std::numeric_limits<mz_ulong>::max)()))
-        return false;
-
-    const mz_ulong sourceLength = static_cast<mz_ulong>(srcSize);
-    mz_ulong destLen = compressBound(sourceLength);
-    out.resize(destLen);
-    int ret = compress2(out.data(), &destLen, src, sourceLength, Z_BEST_COMPRESSION);
-    if (ret != Z_OK) return false;
-    out.resize(destLen);
-    return true;
-}
-
-// ============================================================
-//  Parsing helpers  (take EspInstance* instead of globals)
-// ============================================================
-static void ParseSubRecords(
-    EspInstance* instance,
-    EspBinaryReader& reader,
-    std::uint64_t end,
-    EspRecord& record)
-{
-    record.OnRecordBegin();
-    while (reader.Position() < end)
-    {
-        reader.RequireWithin(end, sizeof(SubRecordHeader), "Subrecord header");
-        char signature[4]{};
-        reader.Read(signature, sizeof(signature), "Subrecord signature");
-        std::uint32_t dataSize = reader.ReadValue<std::uint16_t>("Subrecord size");
-
-        if (std::memcmp(signature, "XXXX", 4) == 0)
-        {
-            if (dataSize != sizeof(std::uint32_t))
-                reader.Reject("Extended subrecord size marker has an invalid payload length.");
-
-            dataSize = reader.ReadValue<std::uint32_t>("Extended subrecord size");
-            reader.RequireWithin(end, sizeof(SubRecordHeader), "Extended subrecord header");
-            reader.Read(signature, sizeof(signature), "Extended subrecord signature");
-            const std::uint16_t encodedSize = reader.ReadValue<std::uint16_t>("Extended subrecord encoded size");
-            if (encodedSize != 0)
-                reader.Reject("Extended subrecord must use a zero 16-bit size field.");
-        }
-
-        reader.RequireWithin(end, dataSize, "Subrecord data");
-        std::vector<std::uint8_t> data = reader.ReadBytes(
-            dataSize,
-            MaxSubRecordDataSize,
-            "Subrecord data");
-        record.AddSubRecord(
-            instance->CharTracker,
-            instance->TextValidator,
-            signature,
-            data.data(),
-            data.size(),
-            *instance->Filter);
-    }
-
-    reader.RequireEnd(end, "Subrecord range");
-    record.OnRecordFinished(
-        instance->CharTracker,
-        &instance->DeferredInfoLinks,
-        &instance->DeferredVoiceTypeLinks,
-        &instance->DeferredFactionLinks,
-        &instance->DeferredRaceLinks);
-}
-
-static void ParseRecord(
-    EspInstance* instance,
-    EspBinaryReader& reader,
-    const char signature[4],
-    std::uint64_t containerEnd,
-    std::uint32_t currentDialFormId,
-    bool insideGroup,
-    EspParseBudget& budget)
-{
-    reader.RequireWithin(containerEnd, sizeof(RecordHeader) - 4, "Record header");
-    RecordHeader header{};
-    std::memcpy(header.Sig, signature, sizeof(header.Sig));
-    header.DataSize = reader.ReadValue<std::uint32_t>("Record data size");
-    header.Flags = reader.ReadValue<std::uint32_t>("Record flags");
-    header.FormID = reader.ReadValue<std::uint32_t>("Record form ID");
-    header.VersionCtrl = reader.ReadValue<std::uint32_t>("Record version control");
-    header.Version = reader.ReadValue<std::uint16_t>("Record version");
-    header.Unknown = reader.ReadValue<std::uint16_t>("Record unknown field");
-    if (header.DataSize > MaxRecordDataSize)
-        reader.Reject("Record data exceeds the configured allocation limit.");
-
-    const std::uint64_t recordEnd = reader.SubrangeEnd(header.DataSize, containerEnd, "Record data");
-    budget.AddRecord(reader);
-    EspRecord record(header.Sig, header.FormID, header.Flags);
-
-    if (std::memcmp(header.Sig, "TES4", 4) == 0)
-    {
-        instance->Filter->FileIsLocalized = (header.Flags & RECORD_FLAG_LOCALIZED) != 0;
-    }
-
-    if (IsCompressed(header))
-    {
-        reader.RequireWithin(recordEnd, sizeof(std::uint32_t), "Compressed record size");
-        const std::uint32_t uncompressedSize =
-            reader.ReadValue<std::uint32_t>("Compressed record uncompressed size");
-        if (uncompressedSize > MaxDecompressedRecordSize)
-            reader.Reject("Decompressed record exceeds the configured allocation limit.");
-
-        const std::size_t compressedSize = static_cast<std::size_t>(recordEnd - reader.Position());
-        std::vector<std::uint8_t> compressed = reader.ReadBytes(
-            compressedSize,
-            MaxRecordDataSize,
-            "Compressed record data");
-        std::vector<std::uint8_t> decompressed;
-        if (!ZlibDecompress(compressed.data(), compressed.size(), decompressed, uncompressedSize))
-            reader.Reject("Compressed record data is invalid.");
-
-        EspBinaryReader decompressedReader(decompressed.data(), decompressed.size());
-        ParseSubRecords(instance, decompressedReader, decompressedReader.Size(), record);
-    }
-    else
-    {
-        ParseSubRecords(instance, reader, recordEnd, record);
-    }
-
-    reader.RequireEnd(recordEnd, "Record data");
-    if (!insideGroup || record.CheckSub())
-        instance->Data->AddRecord(record, *instance->Filter, currentDialFormId);
-}
-
-static void ParseEntries(
-    EspInstance* instance,
-    EspBinaryReader& reader,
-    std::uint64_t end,
-    std::uint32_t currentDialFormId,
-    std::uint32_t depth,
-    EspParseBudget& budget);
-
-static void ParseGroup(
-    EspInstance* instance,
-    EspBinaryReader& reader,
-    std::uint64_t containerEnd,
-    std::uint32_t currentDialFormId,
-    std::uint32_t depth,
-    EspParseBudget& budget)
-{
-    reader.RequireWithin(containerEnd, sizeof(GroupHeader) - 4, "Group header");
-    const std::uint32_t groupSize = reader.ReadValue<std::uint32_t>("Group size");
-    char label[4]{};
-    reader.Read(label, sizeof(label), "Group label");
-    const std::uint32_t groupType = reader.ReadValue<std::uint32_t>("Group type");
-    static_cast<void>(reader.ReadValue<std::uint32_t>("Group stamp"));
-    static_cast<void>(reader.ReadValue<std::uint32_t>("Group unknown field"));
-    if (groupSize < sizeof(GroupHeader))
-        reader.Reject("Group size is smaller than its header.");
-
-    budget.AddGroup(reader, depth);
-    instance->Data->IncrementGrupCount();
-    const std::uint64_t groupEnd = reader.SubrangeEnd(
-        groupSize - sizeof(GroupHeader),
-        containerEnd,
-        "Group data");
-
-    std::uint32_t nextDialFormId = currentDialFormId;
-    if (groupType != 0)
-        std::memcpy(&nextDialFormId, label, sizeof(nextDialFormId));
-
-    ParseEntries(instance, reader, groupEnd, nextDialFormId, depth, budget);
-    reader.RequireEnd(groupEnd, "Group data");
-}
-
-static void ParseEntries(
-    EspInstance* instance,
-    EspBinaryReader& reader,
-    std::uint64_t end,
-    std::uint32_t currentDialFormId,
-    std::uint32_t depth,
-    EspParseBudget& budget)
-{
-    while (reader.Position() < end)
-    {
-        reader.RequireWithin(end, 4, "Record or group signature");
-        char signature[4]{};
-        reader.Read(signature, sizeof(signature), "Record or group signature");
-        if (IsGRUP(signature))
-            ParseGroup(instance, reader, end, currentDialFormId, depth + 1, budget);
-        else
-            ParseRecord(instance, reader, signature, end, currentDialFormId, depth != 0, budget);
-    }
-
-    reader.RequireEnd(end, "Plugin container");
-}
-
-// ============================================================
-//  Flush deferred links  (instance-local maps)
-// ============================================================
-static void FlushDeferredInfoLinks_Inst(EspInstance* inst)
-{
-    if (!inst->CharTracker) return;
-
-    for (auto& kv : inst->DeferredInfoLinks)
-    {
-        auto it = inst->CharTracker->Characters.find(kv.first);
-        if (it != inst->CharTracker->Characters.end())
-            for (uint32_t fid : kv.second) it->second.LinkedInfos.push_back(fid);
-    }
-    for (auto& kv : inst->DeferredVoiceTypeLinks)
-    {
-        auto vtIt = inst->CharTracker->VoiceTypeToNPC.find(kv.first);
-        if (vtIt != inst->CharTracker->VoiceTypeToNPC.end())
-        {
-            auto chr = inst->CharTracker->Characters.find(vtIt->second);
-            if (chr != inst->CharTracker->Characters.end())
-                for (uint32_t fid : kv.second) chr->second.LinkedVoiceTypes.push_back(fid);
-        }
-    }
-    for (auto& kv : inst->DeferredFactionLinks)
-    {
-        auto it = inst->CharTracker->Characters.find(kv.first);
-        if (it != inst->CharTracker->Characters.end())
-            for (uint32_t fid : kv.second) it->second.LinkedFactions.push_back(fid);
-    }
-    for (auto& kv : inst->DeferredRaceLinks)
-    {
-        auto it = inst->CharTracker->Characters.find(kv.first);
-        if (it != inst->CharTracker->Characters.end())
-            for (uint32_t fid : kv.second) it->second.LinkedRaces.push_back(fid);
-    }
-
-    inst->DeferredInfoLinks.clear();
-    inst->DeferredVoiceTypeLinks.clear();
-    inst->DeferredFactionLinks.clear();
-    inst->DeferredRaceLinks.clear();
-}
+static const std::string Version = "1.0.0.6";
 
 // ============================================================
 //  Character cache helpers
@@ -753,7 +405,7 @@ static void ProcessContent(
         reader.RequireWithin(end, 4, "Saved record or group signature");
         char signature[4]{};
         reader.Read(signature, sizeof(signature), "Saved record or group signature");
-        if (IsGRUP(signature))
+        if (IsGroupSignature(signature))
             ProcessGroup(reader, output, end, index, depth + 1);
         else
             ProcessRecord(reader, output, signature, end, index);
@@ -817,9 +469,7 @@ static int GetVersionLengthImpl() { return static_cast<int>(Version.length()); }
 static void InitFilterImpl(EspInstance* h)
 {
     if (!h) return;
-    auto replacement = std::make_unique<RecordFilter>();
-    delete h->Filter;
-    h->Filter = replacement.release();
+    h->Filter = std::make_unique<RecordFilter>();
 }
 
 static int GetFilterImpl(EspInstance* h, uint8_t* buffer, int bufferSize)
@@ -981,40 +631,21 @@ static int GetDescIndexByBookTitleImpl(EspInstance* Handle, int RecordOffset, in
 
 static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
 {
-    if (!Instance || !EspPath) return -1;
+    if (!Instance || !Instance->Filter || !EspPath) return -1;
 
     try
     {
-        EspInstance parsed;
-        parsed.Filter->AllowAll = Instance->Filter->AllowAll;
-        parsed.Filter->LoadFromConfig(Instance->Filter->CurrentConfig);
-        parsed.Data = new EspData();
-
         std::ifstream stream(EspPath, std::ios::binary);
         if (!stream.is_open()) return 1;
 
-        EspBinaryReader reader(stream);
-        EspParseBudget budget;
-        ParseEntries(&parsed, reader, reader.Size(), 0, 0, budget);
-        if (!parsed.Data->HasTES4Header)
-            reader.Reject("Plugin does not contain a TES4 header record.");
-
-        FlushDeferredInfoLinks_Inst(&parsed);
-        parsed.CharacterCacheDirty = true;
-        parsed.Data->BuildDialTopologyIndex();
-        parsed.LastSetPath = EspPath;
-
-        std::swap(Instance->TextValidator, parsed.TextValidator);
-        std::swap(Instance->CharTracker, parsed.CharTracker);
-        std::swap(Instance->Data, parsed.Data);
-        std::swap(Instance->CharacterIndexCache, parsed.CharacterIndexCache);
-        std::swap(Instance->CharacterCacheDirty, parsed.CharacterCacheDirty);
-        std::swap(Instance->DeferredInfoLinks, parsed.DeferredInfoLinks);
-        std::swap(Instance->DeferredVoiceTypeLinks, parsed.DeferredVoiceTypeLinks);
-        std::swap(Instance->DeferredFactionLinks, parsed.DeferredFactionLinks);
-        std::swap(Instance->DeferredRaceLinks, parsed.DeferredRaceLinks);
-        std::swap(Instance->LastSetPath, parsed.LastSetPath);
-        Instance->Filter->FileIsLocalized = parsed.Filter->FileIsLocalized;
+        EspParsedDocument parsed = EspParser::Parse(stream, *Instance->Filter);
+        Instance->Filter->FileIsLocalized = parsed.IsLocalized();
+        Instance->TextValidator = parsed.TakeAnalysis();
+        Instance->CharTracker = parsed.TakeCharacters();
+        Instance->Data = parsed.TakeData();
+        Instance->CharacterIndexCache.clear();
+        Instance->CharacterCacheDirty = true;
+        Instance->LastSetPath = EspPath;
 
         return 0;
     }

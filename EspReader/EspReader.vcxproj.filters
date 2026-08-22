@@ -18,6 +18,12 @@
     <ClCompile Include="EspReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EspCompression.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="EspParser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="miniz.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -33,6 +39,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EspBinaryReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EspCompression.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EspFormat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EspParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EspReaderApi.h">

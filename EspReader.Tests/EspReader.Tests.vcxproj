@@ -86,10 +86,17 @@
     <ClCompile Include="EspReaderHeaderC.c">
       <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
+    <ClCompile Include="..\EspReader\EspCompression.cpp" />
+    <ClCompile Include="..\EspReader\EspParser.cpp" />
+    <ClCompile Include="..\EspReader\TextHelper.cpp" />
+    <ClCompile Include="..\EspReader\miniz.c">
+      <DisableSpecificWarnings>4127;28182;6386;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
     <ClCompile Include="EspReaderParserTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\EspReader\EspReaderApi.h" />
+    <ClInclude Include="..\EspReader\EspParser.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures\README.md" />
