@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <cstdint>
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 
 enum class CharacterGender
@@ -23,11 +24,11 @@ struct InfoCharacterLink
 class CharacterRecord
 {
     public:
-    uint32_t        NpcFormID;      
+    uint32_t        NpcFormID = 0;
     std::string     Name;           
     std::string     EditorID;       
     std::string     VoiceType;     
-    CharacterGender Gender;             
+    CharacterGender Gender = CharacterGender::Unknown;
     std::vector<uint32_t> LinkedInfos;
     std::vector<uint32_t> LinkedFactions;    
     std::vector<uint32_t> LinkedRaces;       
@@ -38,7 +39,9 @@ class CharacterRecord
         if (VoiceType.empty()) return CharacterGender::Unknown;
 
         std::string Lower = VoiceType;
-        std::transform(Lower.begin(), Lower.end(), Lower.begin(), ::tolower);
+        std::transform(Lower.begin(), Lower.end(), Lower.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
 
         if (Lower.find("female") != std::string::npos)
             return CharacterGender::Female;
@@ -112,12 +115,16 @@ class CharacterTracker
     {
         std::vector<const CharacterRecord*> Result;
         std::string LowerQuery = Query;
-        std::transform(LowerQuery.begin(), LowerQuery.end(), LowerQuery.begin(), ::tolower);
+        std::transform(LowerQuery.begin(), LowerQuery.end(), LowerQuery.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
 
         for (const auto& pair : Characters)
         {
             std::string LowerName = pair.second.Name;
-            std::transform(LowerName.begin(), LowerName.end(), LowerName.begin(), ::tolower);
+            std::transform(LowerName.begin(), LowerName.end(), LowerName.begin(), [](unsigned char value) {
+                return static_cast<char>(std::tolower(value));
+            });
 
             if (LowerName.find(LowerQuery) != std::string::npos)
                 Result.push_back(&pair.second);

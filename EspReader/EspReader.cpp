@@ -6,78 +6,49 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include "miniz.h"
 #include <random>
 #include <mutex>
+#include <limits>
+#include <memory>
+#include <stdexcept>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#ifdef SSELexApi_EXPORTS
-#define SSELex_API __declspec(dllexport)
-#else
-#define SSELex_API __declspec(dllimport)
-#endif
-
-
-#include "EspRecord.cpp"
+#include "EspReaderApi.h"
+#include "EspBinaryReader.h"
+#include "EspCompression.h"
+#include "EspFormat.h"
+#include "EspParser.h"
 
 class EspInstance
 {
 public:
-    ESP_HeuristicAnalysis* TextValidator = nullptr;
-    CharacterTracker* CharTracker = nullptr;
-    EspData* Data = nullptr;
-    RecordFilter* Filter = nullptr;
+    std::unique_ptr<ESP_HeuristicAnalysis> TextValidator;
+    std::unique_ptr<CharacterTracker> CharTracker;
+    std::unique_ptr<EspData> Data;
+    std::unique_ptr<RecordFilter> Filter;
     std::wstring            LastSetPath;
 
     // Character index cache
     std::vector<const CharacterRecord*> CharacterIndexCache;
     bool                    CharacterCacheDirty = true;
 
-    // Deferred link maps
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredInfoLinks;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredVoiceTypeLinks;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredFactionLinks;
-    std::unordered_map<uint32_t, std::vector<uint32_t>> DeferredRaceLinks;
-
     EspInstance()
+        : TextValidator(std::make_unique<ESP_HeuristicAnalysis>()),
+          CharTracker(std::make_unique<CharacterTracker>()),
+          Filter(std::make_unique<RecordFilter>())
     {
-        TextValidator = new ESP_HeuristicAnalysis();
-        CharTracker = new CharacterTracker();
-        Filter = new RecordFilter();
-    }
-
-    ~EspInstance() { ReleaseAll(); }
-
-    void ReleaseAll()
-    {
-        delete TextValidator; TextValidator = nullptr;
-        delete CharTracker;   CharTracker = nullptr;
-        delete Data;          Data = nullptr;
-        delete Filter;        Filter = nullptr;
-
-        CharacterIndexCache.clear();
-        CharacterCacheDirty = true;
-        DeferredInfoLinks.clear();
-        DeferredVoiceTypeLinks.clear();
-        DeferredFactionLinks.clear();
-        DeferredRaceLinks.clear();
-        LastSetPath.clear();
     }
 
     // Reset data only (keep filter/validator alive)
     void ClearData()
     {
-        delete Data; Data = nullptr;
+        Data.reset();
 
         CharacterIndexCache.clear();
         CharacterCacheDirty = true;
-        DeferredInfoLinks.clear();
-        DeferredVoiceTypeLinks.clear();
-        DeferredFactionLinks.clear();
-        DeferredRaceLinks.clear();
         LastSetPath.clear();
     }
 };
@@ -85,352 +56,14 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.6.8";
-
-// ============================================================
-//  Forward declarations (parsing helpers – unchanged logic)
-// ============================================================
-#pragma pack(push,1)
-struct RecordHeader {
-    char     Sig[4];
-    uint32_t DataSize;
-    uint32_t Flags;
-    uint32_t FormID;
-    uint32_t VersionCtrl;
-    uint16_t Version;
-    uint16_t Unknown;
-};
-#pragma pack(pop)
-
-#pragma pack(push,1)
-struct GroupHeader {
-    char     Sig[4];
-    uint32_t Size;
-    char     Label[4];
-    uint32_t GroupType;
-    uint32_t Stamp;
-    uint32_t Unknown;
-};
-#pragma pack(pop)
-
-#pragma pack(push,1)
-struct SubRecordHeader {
-    char     Sig[4];
-    uint16_t Size;
-};
-#pragma pack(pop)
-
-constexpr uint32_t RECORD_FLAG_COMPRESSED = 0x00040000;
-constexpr uint32_t RECORD_FLAG_LOCALIZED = 0x00000080; // TES4 header only
-
-template<typename T>
-inline void Read(std::ifstream& f, T& out) { f.read(reinterpret_cast<char*>(&out), sizeof(T)); }
-inline bool IsGRUP(const char sig[4]) { return std::memcmp(sig, "GRUP", 4) == 0; }
-inline bool IsCompressed(const RecordHeader& hdr) { return (hdr.Flags & RECORD_FLAG_COMPRESSED) != 0; }
-
-bool ZlibDecompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out, size_t uncompressedSize)
-{
-    out.resize(uncompressedSize);
-    size_t ret = tinfl_decompress_mem_to_mem(out.data(), uncompressedSize, src, srcSize, TINFL_FLAG_PARSE_ZLIB_HEADER);
-    return ret == uncompressedSize;
-}
-
-bool ZlibCompress(const uint8_t* src, size_t srcSize, std::vector<uint8_t>& out)
-{
-    mz_ulong destLen = compressBound(srcSize);
-    out.resize(destLen);
-    int ret = compress2(out.data(), &destLen, src, srcSize, Z_BEST_COMPRESSION);
-    if (ret != Z_OK) return false;
-    out.resize(destLen);
-    return true;
-}
-
-// ============================================================
-//  Parsing helpers  (take EspInstance* instead of globals)
-// ============================================================
-void ParseSubRecords(EspInstance* Instance, const uint8_t* data, size_t dataSize, EspRecord& rec,
-    const RecordFilter& filter, const char recordSig[4])
-{
-    rec.OnRecordBegin();
-    size_t offset = 0;
-    while (offset + sizeof(SubRecordHeader) <= dataSize)
-    {
-        const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
-        if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
-        rec.AddSubRecord(
-            Instance->CharTracker,
-            Instance->TextValidator
-            , sub->Sig, data + offset + sizeof(SubRecordHeader), sub->Size,
-            const_cast<RecordFilter&>(filter));
-        offset += sizeof(SubRecordHeader) + sub->Size;
-    }
-    rec.OnRecordFinished(
-        Instance->CharTracker,
-        &Instance->DeferredInfoLinks,
-        &Instance->DeferredVoiceTypeLinks,
-        &Instance->DeferredFactionLinks,
-        &Instance->DeferredRaceLinks
-        , recordSig, nullptr, 0);
-}
-
-void ParseSubRecordsStream(EspInstance* Instance, std::ifstream& f, uint32_t recordSize, EspRecord& rec,
-    const RecordFilter& filter, const char recordSig[4])
-{
-    rec.OnRecordBegin();
-    uint32_t bytesRead = 0;
-    while (bytesRead < recordSize && f.good())
-    {
-        if (bytesRead + sizeof(SubRecordHeader) > recordSize) { f.seekg(recordSize - bytesRead, std::ios::cur); break; }
-        SubRecordHeader sub{};
-        if (!f.read(reinterpret_cast<char*>(&sub), sizeof(sub))) break;
-        bytesRead += sizeof(SubRecordHeader);
-        if (bytesRead + sub.Size > recordSize) { f.seekg(recordSize - bytesRead, std::ios::cur); break; }
-        std::vector<uint8_t> buf(sub.Size);
-        if (sub.Size > 0) { f.read(reinterpret_cast<char*>(buf.data()), sub.Size); bytesRead += sub.Size; }
-        rec.AddSubRecord(
-            Instance->CharTracker,
-            Instance->TextValidator
-            , sub.Sig, buf.data(), sub.Size, const_cast<RecordFilter&>(filter));
-    }
-    rec.OnRecordFinished(
-        Instance->CharTracker,
-        &Instance->DeferredInfoLinks,
-        &Instance->DeferredVoiceTypeLinks,
-        &Instance->DeferredFactionLinks,
-        &Instance->DeferredRaceLinks
-        , recordSig, nullptr, 0);
-}
-
-// ---- Instance-aware versions of the big parse functions ----
-
-static void ParseRecord_Inst(EspInstance* Instance, std::ifstream& f, const char Sig[4], uint32_t CurrentDialFormID)
-{
-    RecordHeader hdr{};
-    std::memcpy(hdr.Sig, Sig, 4);
-    Read(f, hdr.DataSize); Read(f, hdr.Flags); Read(f, hdr.FormID);
-    Read(f, hdr.VersionCtrl); Read(f, hdr.Version); Read(f, hdr.Unknown);
-
-    //CharacterTracker* CurrentTracker = Instance->CharTracker;
-
-    EspRecord rec(hdr.Sig, hdr.FormID, hdr.Flags);
-
-    if (std::memcmp(hdr.Sig, "TES4", 4) == 0)
-    {
-        Instance->Filter->FileIsLocalized = (hdr.Flags & RECORD_FLAG_LOCALIZED) != 0;
-    }
-    if (IsCompressed(hdr))
-    {
-        if (hdr.DataSize < 4) { f.seekg(hdr.DataSize, std::ios::cur); Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID); return; }
-        uint32_t uncompressedSize = 0; Read(f, uncompressedSize);
-        uint32_t compressedSize = hdr.DataSize - 4;
-        std::vector<uint8_t> compressed(compressedSize);
-        f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
-        std::vector<uint8_t> decompressed;
-        if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-            ParseSubRecords(Instance, decompressed.data(), decompressed.size(), rec, *Instance->Filter, hdr.Sig);
-    }
-    else { ParseSubRecordsStream(Instance, f, hdr.DataSize, rec, *Instance->Filter, hdr.Sig); }
-    Instance->Data->AddRecord(rec, *Instance->Filter, CurrentDialFormID);
-}
-
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize, uint32_t currentDialFormID);
-
-static void ParseGroupIterative_Inst(EspInstance* Instance, std::ifstream& f)
-{
-    GroupHeader gh{};
-    std::memcpy(gh.Sig, "GRUP", 4);
-    Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
-    if (gh.Size < 24) return;
-
-    Instance->Data->IncrementGrupCount();
-
-    if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24, 0); return; }
-
-    struct GS {
-        uint32_t remaining;
-        uint32_t currentDialFormID;
-    };
-
-    std::stack<GS> groupStack;
-
-    uint32_t initialDialFormID = 0;
-
-    groupStack.push({ gh.Size - 24, initialDialFormID });
-
-    while (!groupStack.empty())
-    {
-        auto& state = groupStack.top();
-        if (state.remaining == 0) { groupStack.pop(); continue; }
-        if (state.remaining < 4) { f.seekg(state.remaining, std::ios::cur); groupStack.pop(); continue; }
-
-        char sig[4];
-        if (!f.read(sig, 4)) { groupStack.pop(); continue; }
-
-        if (IsGRUP(sig))
-        {
-            if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
-            Read(f, gh.Size); f.read(gh.Label, 4); Read(f, gh.GroupType); Read(f, gh.Stamp); Read(f, gh.Unknown);
-            if (gh.Size < 24 || gh.Size > state.remaining) { groupStack.pop(); continue; }
-            if (std::memcmp(gh.Label, "CELL", 4) == 0) { ParseCellGroup_Inst(Instance, f, gh.Size - 24, 0); state.remaining -= gh.Size; continue; }
-            Instance->Data->IncrementGrupCount();
-
-            uint32_t nextDialFormID = state.currentDialFormID;
-            if (gh.GroupType != 0)
-            {
-                std::memcpy(&nextDialFormID, gh.Label, 4);
-            }
-
-            state.remaining -= gh.Size;
-            groupStack.push({ gh.Size - 24, nextDialFormID });
-        }
-        else
-        {
-            if (state.remaining < 24) { f.seekg(state.remaining - 4, std::ios::cur); groupStack.pop(); continue; }
-            RecordHeader hdr{};
-            std::memcpy(hdr.Sig, sig, 4);
-            Read(f, hdr.DataSize); Read(f, hdr.Flags); Read(f, hdr.FormID); Read(f, hdr.VersionCtrl); Read(f, hdr.Version); Read(f, hdr.Unknown);
-            uint32_t recordTotalSize = 24 + hdr.DataSize;
-            if (recordTotalSize > state.remaining) { groupStack.pop(); continue; }
-
-            EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
-
-            // === REMOVED: ParentDialFormID assignment (useless) ===
-            // No longer set ParentDialFormID or HasDialContext here – they are set during subrecord parsing.
-
-            if (IsCompressed(hdr))
-            {
-                if (hdr.DataSize < 4) f.seekg(hdr.DataSize, std::ios::cur);
-                else {
-                    uint32_t uncompressedSize = 0; Read(f, uncompressedSize);
-                    uint32_t compressedSize = hdr.DataSize - 4;
-                    std::vector<uint8_t> compressed(compressedSize);
-                    f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
-                    std::vector<uint8_t> decompressed;
-                    if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(Instance, decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
-                }
-            }
-            else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
-
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, state.currentDialFormID);
-            state.remaining -= recordTotalSize;
-        }
-    }
-}
-
-static void ParseCellGroup_Inst(EspInstance* Instance, std::ifstream& f, uint32_t groupSize, uint32_t currentDialFormID)
-{
-    uint32_t bytesRead = 0;
-    while (bytesRead < groupSize && f.good())
-    {
-        if (groupSize - bytesRead < 4) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-        char sig[4];
-        if (!f.read(sig, 4)) break;
-        bytesRead += 4;
-
-        if (IsGRUP(sig))
-        {
-            if (groupSize - bytesRead < 20) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-            GroupHeader gh{};
-            std::memcpy(gh.Sig, sig, 4);
-            Read(f, gh.Size);
-            f.read(gh.Label, 4);
-            Read(f, gh.GroupType);
-            Read(f, gh.Stamp);
-            Read(f, gh.Unknown);
-            bytesRead += 20;
-            if (gh.Size < 24 || gh.Size >(groupSize - bytesRead + 24)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-            Instance->Data->IncrementGrupCount();
-            uint32_t contentSize = gh.Size - 24;
-            ParseCellGroup_Inst(Instance, f, contentSize, currentDialFormID);  //Pass currentDialFormID
-            bytesRead += contentSize;
-        }
-        else
-        {
-            if (groupSize - bytesRead < 20) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-            RecordHeader hdr{};
-            std::memcpy(hdr.Sig, sig, 4);
-            Read(f, hdr.DataSize);
-            Read(f, hdr.Flags);
-            Read(f, hdr.FormID);
-            Read(f, hdr.VersionCtrl);
-            Read(f, hdr.Version);
-            Read(f, hdr.Unknown);
-            bytesRead += 20;
-            uint32_t recordTotalSize = hdr.DataSize;
-            if (recordTotalSize > (groupSize - bytesRead)) { f.seekg(groupSize - bytesRead, std::ios::cur); break; }
-
-            EspRecord Record(hdr.Sig, hdr.FormID, hdr.Flags);
-            if (IsCompressed(hdr))
-            {
-                if (hdr.DataSize < 4) f.seekg(hdr.DataSize, std::ios::cur);
-                else {
-                    uint32_t uncompressedSize = 0;
-                    Read(f, uncompressedSize);
-                    uint32_t compressedSize = hdr.DataSize - 4;
-                    std::vector<uint8_t> compressed(compressedSize);
-                    f.read(reinterpret_cast<char*>(compressed.data()), compressedSize);
-                    std::vector<uint8_t> decompressed;
-                    if (ZlibDecompress(compressed.data(), compressedSize, decompressed, uncompressedSize))
-                        ParseSubRecords(Instance, decompressed.data(), decompressed.size(), Record, *Instance->Filter, hdr.Sig);
-                }
-            }
-            else ParseSubRecordsStream(Instance, f, hdr.DataSize, Record, *Instance->Filter, hdr.Sig);
-
-            if (Record.CheckSub()) Instance->Data->AddRecord(Record, *Instance->Filter, currentDialFormID);
-            bytesRead += recordTotalSize;
-        }
-    }
-    if (bytesRead < groupSize) f.seekg(groupSize - bytesRead, std::ios::cur);
-}
-
-// ============================================================
-//  Flush deferred links  (instance-local maps)
-// ============================================================
-static void FlushDeferredInfoLinks_Inst(EspInstance* inst)
-{
-    if (!inst->CharTracker) return;
-
-    for (auto& kv : inst->DeferredInfoLinks)
-    {
-        auto it = inst->CharTracker->Characters.find(kv.first);
-        if (it != inst->CharTracker->Characters.end())
-            for (uint32_t fid : kv.second) it->second.LinkedInfos.push_back(fid);
-    }
-    for (auto& kv : inst->DeferredVoiceTypeLinks)
-    {
-        auto vtIt = inst->CharTracker->VoiceTypeToNPC.find(kv.first);
-        if (vtIt != inst->CharTracker->VoiceTypeToNPC.end())
-        {
-            auto chr = inst->CharTracker->Characters.find(vtIt->second);
-            if (chr != inst->CharTracker->Characters.end())
-                for (uint32_t fid : kv.second) chr->second.LinkedVoiceTypes.push_back(fid);
-        }
-    }
-    for (auto& kv : inst->DeferredFactionLinks)
-    {
-        auto it = inst->CharTracker->Characters.find(kv.first);
-        if (it != inst->CharTracker->Characters.end())
-            for (uint32_t fid : kv.second) it->second.LinkedFactions.push_back(fid);
-    }
-    for (auto& kv : inst->DeferredRaceLinks)
-    {
-        auto it = inst->CharTracker->Characters.find(kv.first);
-        if (it != inst->CharTracker->Characters.end())
-            for (uint32_t fid : kv.second) it->second.LinkedRaces.push_back(fid);
-    }
-
-    inst->DeferredInfoLinks.clear();
-    inst->DeferredVoiceTypeLinks.clear();
-    inst->DeferredFactionLinks.clear();
-    inst->DeferredRaceLinks.clear();
-}
+static const std::string Version = "1.0.0.6";
 
 // ============================================================
 //  Character cache helpers
 // ============================================================
 static void EnsureCharacterCache(EspInstance* inst)
 {
+    if (!inst) return;
     if (!inst->CharacterCacheDirty) return;
     inst->CharacterIndexCache.clear();
     if (!inst->CharTracker) return;
@@ -441,6 +74,7 @@ static void EnsureCharacterCache(EspInstance* inst)
 
 static const CharacterRecord* GetCharacterAt(EspInstance* inst, int index)
 {
+    if (!inst) return nullptr;
     EnsureCharacterCache(inst);
     if (index < 0 || index >= static_cast<int>(inst->CharacterIndexCache.size())) return nullptr;
     return inst->CharacterIndexCache[index];
@@ -461,9 +95,18 @@ static inline uint64_t MakeRecordKey(uint32_t FormID, const char Sig[4])
     uint32_t SigInt = 0; std::memcpy(&SigInt, Sig, 4);
     return (static_cast<uint64_t>(FormID) << 32) | static_cast<uint64_t>(SigInt);
 }
-static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig) { return MakeRecordKey(FormID, Sig.c_str()); }
+static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig)
+{
+    return MakeRecordKey(FormID, Sig.c_str());
+}
 
-struct OriginalSubRecord { std::string Sig; int OccurrenceIndex; size_t OffsetInData; uint16_t Size; };
+struct OriginalSubRecord
+{
+    std::string Sig;
+    int OccurrenceIndex = 0;
+    std::size_t SerializedOffset = 0;
+    std::size_t SerializedSize = 0;
+};
 
 static std::unordered_map<uint64_t, const EspRecord*> BuildModifiedIndex(EspInstance* inst)
 {
@@ -482,18 +125,37 @@ static std::vector<OriginalSubRecord> ParseOriginalSubRecords(const uint8_t* dat
 {
     std::vector<OriginalSubRecord> result;
     std::unordered_map<std::string, int> occ;
-    size_t offset = 0;
-    while (offset + sizeof(SubRecordHeader) <= dataSize)
+    EspBinaryReader reader(data, dataSize);
+    while (reader.Remaining() != 0)
     {
-        const SubRecordHeader* sub = reinterpret_cast<const SubRecordHeader*>(data + offset);
-        if (offset + sizeof(SubRecordHeader) + sub->Size > dataSize) break;
+        const std::size_t serializedOffset = static_cast<std::size_t>(reader.Position());
+        reader.RequireWithin(reader.Size(), sizeof(SubRecordHeader), "Original subrecord header");
+        char signature[4]{};
+        reader.Read(signature, sizeof(signature), "Original subrecord signature");
+        std::uint32_t size = reader.ReadValue<std::uint16_t>("Original subrecord size");
+        if (std::memcmp(signature, "XXXX", 4) == 0)
+        {
+            if (size != sizeof(std::uint32_t))
+                reader.Reject("Original extended subrecord marker has an invalid size.");
+
+            size = reader.ReadValue<std::uint32_t>("Original extended subrecord size");
+            reader.RequireWithin(reader.Size(), sizeof(SubRecordHeader), "Original extended subrecord header");
+            reader.Read(signature, sizeof(signature), "Original extended subrecord signature");
+            if (reader.ReadValue<std::uint16_t>("Original extended encoded size") != 0)
+                reader.Reject("Original extended subrecord has a non-zero encoded size.");
+        }
+
+        if (size > MaxSubRecordDataSize)
+            reader.Reject("Original subrecord exceeds the configured allocation limit.");
+        reader.RequireWithin(reader.Size(), size, "Original subrecord data");
+        reader.Skip(size, "Original subrecord data");
+
         OriginalSubRecord osr;
-        osr.Sig = std::string(sub->Sig, 4);
+        osr.Sig = std::string(signature, 4);
         osr.OccurrenceIndex = occ[osr.Sig]++;
-        osr.OffsetInData = offset;
-        osr.Size = sub->Size;
+        osr.SerializedOffset = serializedOffset;
+        osr.SerializedSize = static_cast<std::size_t>(reader.Position()) - serializedOffset;
         result.push_back(osr);
-        offset += sizeof(SubRecordHeader) + sub->Size;
     }
     return result;
 }
@@ -519,127 +181,236 @@ static std::vector<uint8_t> ModifySubRecordsWithFilter(
     auto originalSubs = ParseOriginalSubRecords(originalData, dataSize);
     for (const auto& osr : originalSubs)
     {
-        const SubRecordData* modified = FindModifiedSubRecord(modifiedIndex, parentSig, formID, osr.Sig, osr.OccurrenceIndex);
+        const SubRecordData* modified = FindModifiedSubRecord(
+            modifiedIndex,
+            parentSig,
+            formID,
+            osr.Sig,
+            osr.OccurrenceIndex);
         if (modified)
         {
-            if (modified->Data.size() > 0xFFFF) {
-                result.insert(result.end(), originalData + osr.OffsetInData, originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
-                continue;
+            if (modified->Data.size() > MaxSubRecordDataSize)
+                throw std::length_error("Modified subrecord exceeds the configured allocation limit.");
+
+            if (modified->Data.size() > (std::numeric_limits<std::uint16_t>::max)())
+            {
+                SubRecordHeader extendedHeader{};
+                std::memcpy(extendedHeader.Sig, "XXXX", sizeof(extendedHeader.Sig));
+                extendedHeader.Size = sizeof(std::uint32_t);
+                result.insert(
+                    result.end(),
+                    reinterpret_cast<const std::uint8_t*>(&extendedHeader),
+                    reinterpret_cast<const std::uint8_t*>(&extendedHeader) + sizeof(extendedHeader));
+                const std::uint32_t extendedSize = static_cast<std::uint32_t>(modified->Data.size());
+                result.insert(
+                    result.end(),
+                    reinterpret_cast<const std::uint8_t*>(&extendedSize),
+                    reinterpret_cast<const std::uint8_t*>(&extendedSize) + sizeof(extendedSize));
             }
-            SubRecordHeader newHeader; std::memcpy(newHeader.Sig, osr.Sig.c_str(), 4);
-            newHeader.Size = static_cast<uint16_t>(modified->Data.size());
-            result.insert(result.end(), reinterpret_cast<uint8_t*>(&newHeader), reinterpret_cast<uint8_t*>(&newHeader) + sizeof(newHeader));
+
+            SubRecordHeader newHeader{};
+            std::memcpy(newHeader.Sig, osr.Sig.c_str(), sizeof(newHeader.Sig));
+            newHeader.Size = modified->Data.size() > (std::numeric_limits<std::uint16_t>::max)()
+                ? 0
+                : static_cast<std::uint16_t>(modified->Data.size());
+            result.insert(
+                result.end(),
+                reinterpret_cast<const std::uint8_t*>(&newHeader),
+                reinterpret_cast<const std::uint8_t*>(&newHeader) + sizeof(newHeader));
             result.insert(result.end(), modified->Data.begin(), modified->Data.end());
         }
-        else result.insert(result.end(), originalData + osr.OffsetInData, originalData + osr.OffsetInData + sizeof(SubRecordHeader) + osr.Size);
+        else
+        {
+            result.insert(
+                result.end(),
+                originalData + osr.SerializedOffset,
+                originalData + osr.SerializedOffset + osr.SerializedSize);
+        }
+
+        if (result.size() > MaxDecompressedRecordSize)
+            throw std::length_error("Modified record exceeds the configured allocation limit.");
     }
     return result;
 }
 
-// Forward declare ProcessGRUP_Inst
-static bool ProcessGRUP_Inst(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4], const std::unordered_map<uint64_t, const EspRecord*>& idx);
-static bool ProcessGRUPContent_Inst(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize, const std::unordered_map<uint64_t, const EspRecord*>& idx);
+static void WriteOutput(std::ofstream& output, const void* data, std::size_t size, const char* context)
+{
+    if (size > static_cast<std::size_t>((std::numeric_limits<std::streamsize>::max)()))
+        throw std::length_error(std::string(context) + " exceeds the stream write limit.");
+    if (size == 0)
+        return;
 
-static bool ProcessRecord_Inst(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
+    output.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+    if (!output)
+        throw std::runtime_error(std::string(context) + " could not be written completely.");
+}
+
+static void ProcessGroup(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t containerEnd,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth);
+
+static void ProcessContent(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t end,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth);
+
+static void ProcessRecord(EspBinaryReader& reader, std::ofstream& output, const char Sig[4],
+    std::uint64_t containerEnd,
     const std::unordered_map<uint64_t, const EspRecord*>& modifiedIndex)
 {
-    RecordHeader HDR{}; std::memcpy(HDR.Sig, Sig, 4);
-    Read(Fin, HDR.DataSize); Read(Fin, HDR.Flags); Read(Fin, HDR.FormID); Read(Fin, HDR.VersionCtrl); Read(Fin, HDR.Version); Read(Fin, HDR.Unknown);
-    std::vector<uint8_t> OriginalData(HDR.DataSize);
-    Fin.read(reinterpret_cast<char*>(OriginalData.data()), HDR.DataSize);
+    reader.RequireWithin(containerEnd, sizeof(RecordHeader) - 4, "Saved record header");
+    RecordHeader HDR{};
+    std::memcpy(HDR.Sig, Sig, sizeof(HDR.Sig));
+    HDR.DataSize = reader.ReadValue<std::uint32_t>("Saved record data size");
+    HDR.Flags = reader.ReadValue<std::uint32_t>("Saved record flags");
+    HDR.FormID = reader.ReadValue<std::uint32_t>("Saved record form ID");
+    HDR.VersionCtrl = reader.ReadValue<std::uint32_t>("Saved record version control");
+    HDR.Version = reader.ReadValue<std::uint16_t>("Saved record version");
+    HDR.Unknown = reader.ReadValue<std::uint16_t>("Saved record unknown field");
+    if (HDR.DataSize > MaxRecordDataSize)
+        reader.Reject("Saved record exceeds the configured allocation limit.");
+    const std::uint64_t recordEnd = reader.SubrangeEnd(HDR.DataSize, containerEnd, "Saved record data");
+    std::vector<uint8_t> OriginalData = reader.ReadBytes(
+        HDR.DataSize,
+        MaxRecordDataSize,
+        "Saved record data");
 
     if (modifiedIndex.find(MakeRecordKey(HDR.FormID, Sig)) == modifiedIndex.end())
     {
-        Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
-        Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize);
-        return true;
+        WriteOutput(output, &HDR, sizeof(HDR), "Saved record header");
+        WriteOutput(output, OriginalData.data(), OriginalData.size(), "Saved record data");
+        reader.RequireEnd(recordEnd, "Saved record data");
+        return;
     }
 
     std::vector<uint8_t> WorkingData;
     bool WasCompressed = IsCompressed(HDR);
     if (WasCompressed)
     {
-        if (HDR.DataSize < 4) { Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR)); Fout.write(reinterpret_cast<const char*>(OriginalData.data()), HDR.DataSize); return true; }
-        uint32_t UncompressedSize; std::memcpy(&UncompressedSize, OriginalData.data(), 4);
-        if (!ZlibDecompress(OriginalData.data() + 4, OriginalData.size() - 4, WorkingData, UncompressedSize)) return false;
+        if (HDR.DataSize < 4)
+            reader.Reject("Saved compressed record has no uncompressed-size field.");
+        uint32_t UncompressedSize = 0;
+        std::memcpy(&UncompressedSize, OriginalData.data(), sizeof(UncompressedSize));
+        if (UncompressedSize > MaxDecompressedRecordSize ||
+            !ZlibDecompress(
+                OriginalData.data() + sizeof(UncompressedSize),
+                OriginalData.size() - sizeof(UncompressedSize),
+                WorkingData,
+                UncompressedSize))
+        {
+            reader.Reject("Saved compressed record data is invalid.");
+        }
     }
     else WorkingData = OriginalData;
 
-    WorkingData = ModifySubRecordsWithFilter(WorkingData.data(), WorkingData.size(), std::string(Sig, 4), HDR.FormID, modifiedIndex);
+    WorkingData = ModifySubRecordsWithFilter(
+        WorkingData.data(),
+        WorkingData.size(),
+        std::string(Sig, 4),
+        HDR.FormID,
+        modifiedIndex);
 
     std::vector<uint8_t> FinalData;
     if (WasCompressed)
     {
         std::vector<uint8_t> Compressed;
-        if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed)) return false;
+        if (!ZlibCompress(WorkingData.data(), WorkingData.size(), Compressed))
+            throw std::runtime_error("Modified record compression failed.");
+        if (Compressed.size() > MaxRecordDataSize - sizeof(std::uint32_t))
+            throw std::length_error("Modified compressed record exceeds the configured limit.");
         FinalData.resize(4 + Compressed.size());
-        uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
+        const uint32_t UncompSize = static_cast<uint32_t>(WorkingData.size());
         std::memcpy(FinalData.data(), &UncompSize, 4);
         std::memcpy(FinalData.data() + 4, Compressed.data(), Compressed.size());
     }
     else FinalData = WorkingData;
 
+    if (FinalData.size() > MaxRecordDataSize ||
+        FinalData.size() > (std::numeric_limits<std::uint32_t>::max)())
+    {
+        throw std::length_error("Modified record exceeds the ESP record-size limit.");
+    }
     HDR.DataSize = static_cast<uint32_t>(FinalData.size());
-    Fout.write(reinterpret_cast<const char*>(&HDR), sizeof(HDR));
-    Fout.write(reinterpret_cast<const char*>(FinalData.data()), FinalData.size());
-    return true;
+    WriteOutput(output, &HDR, sizeof(HDR), "Modified record header");
+    WriteOutput(output, FinalData.data(), FinalData.size(), "Modified record data");
+    reader.RequireEnd(recordEnd, "Saved record data");
 }
 
-static bool ProcessGRUP_Inst(std::ifstream& Fin, std::ofstream& Fout, const char Sig[4],
-    const std::unordered_map<uint64_t, const EspRecord*>& idx)
+static void ProcessGroup(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t containerEnd,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth)
 {
-    GroupHeader GH{}; std::memcpy(GH.Sig, Sig, 4);
-    Read(Fin, GH.Size); Fin.read(GH.Label, 4); Read(Fin, GH.GroupType); Read(Fin, GH.Stamp); Read(Fin, GH.Unknown);
+    if (depth > MaxGroupDepth)
+        reader.Reject("Saved group nesting exceeds the configured limit.");
+    reader.RequireWithin(containerEnd, sizeof(GroupHeader) - 4, "Saved group header");
+    GroupHeader header{};
+    std::memcpy(header.Sig, "GRUP", sizeof(header.Sig));
+    header.Size = reader.ReadValue<std::uint32_t>("Saved group size");
+    reader.Read(header.Label, sizeof(header.Label), "Saved group label");
+    header.GroupType = reader.ReadValue<std::uint32_t>("Saved group type");
+    header.Stamp = reader.ReadValue<std::uint32_t>("Saved group stamp");
+    header.Unknown = reader.ReadValue<std::uint32_t>("Saved group unknown field");
+    if (header.Size < sizeof(GroupHeader))
+        reader.Reject("Saved group size is smaller than its header.");
+    const std::uint64_t groupEnd = reader.SubrangeEnd(
+        header.Size - sizeof(GroupHeader),
+        containerEnd,
+        "Saved group data");
 
-    if (GH.Size < 24) return false;
+    const std::streampos headerPosition = output.tellp();
+    if (headerPosition < 0)
+        throw std::runtime_error("Unable to determine the saved group header position.");
+    WriteOutput(output, &header, sizeof(header), "Saved group header");
+    const std::streampos contentStart = output.tellp();
+    if (contentStart < 0)
+        throw std::runtime_error("Unable to determine the saved group content position.");
 
-    std::streampos headerPos = Fout.tellp();
-    Fout.write(reinterpret_cast<char*>(&GH), sizeof(GH));
-    std::streampos contentStart = Fout.tellp();
-
-    if (!ProcessGRUPContent_Inst(Fin, Fout, GH.Size - 24, idx)) return false;
-
-    std::streampos contentEnd = Fout.tellp();
-    uint32_t actualGrupSize = static_cast<uint32_t>(contentEnd - contentStart) + 24;
-    if (actualGrupSize != GH.Size)
+    ProcessContent(reader, output, groupEnd, index, depth);
+    reader.RequireEnd(groupEnd, "Saved group data");
+    const std::streampos contentEnd = output.tellp();
+    if (contentEnd < contentStart)
+        throw std::runtime_error("Saved group output position is invalid.");
+    const std::uint64_t contentSize = static_cast<std::uint64_t>(contentEnd - contentStart);
+    if (contentSize > (std::numeric_limits<std::uint32_t>::max)() - sizeof(GroupHeader))
+        throw std::length_error("Saved group exceeds the ESP group-size limit.");
+    const uint32_t actualGroupSize = static_cast<uint32_t>(contentSize + sizeof(GroupHeader));
+    if (actualGroupSize != header.Size)
     {
-        std::streampos saved = Fout.tellp();
-        Fout.seekp(headerPos + std::streamoff(4));
-        Fout.write(reinterpret_cast<char*>(&actualGrupSize), sizeof(actualGrupSize));
-        Fout.seekp(saved);
+        const std::streampos saved = output.tellp();
+        output.seekp(headerPosition + std::streamoff(4));
+        WriteOutput(output, &actualGroupSize, sizeof(actualGroupSize), "Updated group size");
+        output.seekp(saved);
+        if (!output)
+            throw std::runtime_error("Unable to restore the saved group output position.");
     }
-    return true;
 }
 
-static bool ProcessGRUPContent_Inst(std::ifstream& Fin, std::ofstream& Fout, int64_t ContentSize,
-    const std::unordered_map<uint64_t, const EspRecord*>& idx)
+static void ProcessContent(
+    EspBinaryReader& reader,
+    std::ofstream& output,
+    std::uint64_t end,
+    const std::unordered_map<uint64_t, const EspRecord*>& index,
+    std::uint32_t depth)
 {
-    int64_t processed = 0;
-    while (processed < ContentSize && Fin.good())
+    while (reader.Position() < end)
     {
-        if (ContentSize - processed < 4) { Fin.seekg(ContentSize - processed, std::ios::cur); processed = ContentSize; break; }
-        char Sig[4];
-        std::streampos before = Fin.tellg();
-        if (!Fin.read(Sig, 4)) break;
-        bool ok = IsGRUP(Sig) ? ProcessGRUP_Inst(Fin, Fout, Sig, idx) : ProcessRecord_Inst(Fin, Fout, Sig, idx);
-        if (!ok) return false;
-        processed += static_cast<int64_t>(static_cast<int64_t>(Fin.tellg()) - static_cast<int64_t>(before));
+        reader.RequireWithin(end, 4, "Saved record or group signature");
+        char signature[4]{};
+        reader.Read(signature, sizeof(signature), "Saved record or group signature");
+        if (IsGroupSignature(signature))
+            ProcessGroup(reader, output, end, index, depth + 1);
+        else
+            ProcessRecord(reader, output, signature, end, index);
     }
-    if (processed < ContentSize) { Fin.seekg(ContentSize - processed, std::ios::cur); }
-    else if (processed > ContentSize) { Fin.seekg(-(processed - ContentSize), std::ios::cur); }
-    return true;
-}
-
-static bool ProcessFileContent_Inst(std::ifstream& Fin, std::ofstream& Fout,
-    const std::unordered_map<uint64_t, const EspRecord*>& idx)
-{
-    while (Fin.good() && Fin.peek() != EOF)
-    {
-        char Sig[4]; if (!Fin.read(Sig, 4)) break;
-        bool ok = IsGRUP(Sig) ? ProcessGRUP_Inst(Fin, Fout, Sig, idx) : ProcessRecord_Inst(Fin, Fout, Sig, idx);
-        if (!ok) return false;
-    }
-    return true;
+    reader.RequireEnd(end, "Saved plugin container");
 }
 
 static std::mutex SaveEspLock;
@@ -652,8 +423,10 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
 
     int Wlen = MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, NULL, 0);
     if (Wlen == 0) return false;
-    std::wstring WSavePath(Wlen - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, &WSavePath[0], Wlen);
+    std::wstring WSavePath(Wlen, 0);
+    if (MultiByteToWideChar(CP_UTF8, 0, Utf8Path, -1, &WSavePath[0], Wlen) == 0)
+        return false;
+    WSavePath.resize(static_cast<std::size_t>(Wlen - 1));
 
     if (WSavePath == inst->LastSetPath) return false;
 
@@ -668,131 +441,38 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
     Fin.rdbuf()->pubsetbuf(ReadBuf, sizeof(ReadBuf));
     Fout.rdbuf()->pubsetbuf(WriteBuf, sizeof(WriteBuf));
 
-    auto ModifiedIndex = BuildModifiedIndex(inst);
-    bool Success = ProcessFileContent_Inst(Fin, Fout, ModifiedIndex);
-
-    Fin.close(); Fout.close();
-    return Success;
+    try
+    {
+        EspBinaryReader reader(Fin);
+        auto ModifiedIndex = BuildModifiedIndex(inst);
+        ProcessContent(reader, Fout, reader.Size(), ModifiedIndex, 0);
+        Fout.flush();
+        return static_cast<bool>(Fout);
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
-// ============================================================
-//  Exported C API  –  every function takes handle as first arg
-// ============================================================
+// ABI adapters below are the only functions exported by the module.
 
-// --- New dialogue context structures (lean, for C#) ---
-struct C_DialResponseNode
+static EspInstance* CreateInstanceImpl()
 {
-    uint32_t ResponseID;
-    uint32_t EmotionType;
-    int RecordOffset;
-    int SubOffset;
-};
-
-struct C_LinkDIAL
-{
-    int HasData;
-    C_DialResponseNode Head;
-    C_DialResponseNode* Links;
-    uint32_t LinkCount;
-};
-
-extern "C"
-{
-    // ── Lifecycle ────────────────────────────────────────────
-    SSELex_API EspInstance* C_CreateInstance();
-    SSELex_API void         C_DestroyInstance(EspInstance* handle);
-
-    // ── Version ──────────────────────────────────────────────
-    SSELex_API const char* C_GetVersion();
-    SSELex_API int          C_GetVersionLength();
-
-    // ── Filter ───────────────────────────────────────────────
-    SSELex_API void C_InitFilter(EspInstance* handle);
-    SSELex_API int  C_SetSkyrimFilter(EspInstance* handle);
-    SSELex_API int  C_GetFilter(EspInstance* handle, uint8_t* buffer, int bufferSize);
-    SSELex_API int  C_SetFilter(EspInstance* handle, const char* parentSig, const char** childSigs, int childCount);
-    SSELex_API void C_ClearFilter(EspInstance* handle);
-
-    // ── IO ───────────────────────────────────────────────────
-    SSELex_API int          C_ReadEsp(EspInstance* handle, const wchar_t* EspPath);
-    SSELex_API bool         C_SaveEsp(EspInstance* handle, const char* Utf8Path);
-    SSELex_API void         C_Clear(EspInstance* handle);
-
-    // ── Field report ─────────────────────────────────────────
-    SSELex_API const char* C_GetFieldReport(EspInstance* handle);
-    SSELex_API int          C_GetFieldReportLength(EspInstance* handle);
-
-    // ── Search ───────────────────────────────────────────────
-    SSELex_API EspRecord** C_SearchBySig(EspInstance* handle, const char* ParentSig, const char* ChildSig, int* OutCount);
-    SSELex_API void         FreeSearchResults(EspRecord** Arr, int Count);
-
-    // ── Record accessors (record handle not instance) ────────
-    SSELex_API int          C_GetRecordSig(EspRecord* record, uint8_t* buffer, int bufferSize);
-    SSELex_API uint32_t     C_GetRecordFormID(EspRecord* record);
-    SSELex_API const char* C_GetRecordEditorID(EspRecord* record);
-    SSELex_API uint32_t     C_GetRecordFlags(EspRecord* record);
-    SSELex_API int          C_GetRecordIndex(EspRecord* record);
-    SSELex_API int          C_GetSubRecordCount(EspRecord* record);
-
-    // ── SubRecord accessors ──────────────────────────────────
-    SSELex_API const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index);
-    SSELex_API int          C_SubRecordData_GetOccurrenceIndex(const SubRecordData* sub);
-    SSELex_API int          C_SubRecordData_GetIndex(const SubRecordData* sub);
-    SSELex_API const char* C_SubRecordData_GetSig(const SubRecordData* sub);
-    SSELex_API const char* C_SubRecordData_GetString(const SubRecordData* sub);
-    SSELex_API bool         C_SubRecordData_IsLocalized(const SubRecordData* sub);
-    SSELex_API uint32_t     C_SubRecordData_GetStringID(const SubRecordData* sub);
-    SSELex_API int          C_SubRecordData_GetDataSize(const SubRecordData* sub);
-    SSELex_API bool         C_SubRecordData_GetData(const SubRecordData* sub, uint8_t* buffer, int bufferSize);
-    SSELex_API int          C_SubRecordData_GetStringUtf8(const SubRecordData* sub, uint8_t* buffer, int bufferSize);
-    SSELex_API int          C_SubRecordData_GetSigUtf8(const SubRecordData* sub, uint8_t* buffer, int bufferSize);
-
-    // ── Modify ───────────────────────────────────────────────
-    SSELex_API bool C_ModifySubRecordByOffset(EspInstance* handle, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
-    SSELex_API bool C_ModifySubRecord(EspInstance* handle, uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
-
-    // ── Character tracker ────────────────────────────────────
-    SSELex_API void     C_ClearCharacterTracker(EspInstance* handle);
-    SSELex_API int      C_GetCharacterCount(EspInstance* handle);
-    SSELex_API uint32_t C_GetCharacterFormID(EspInstance* handle, int Index);
-    SSELex_API int      C_GetCharacterName(EspInstance* handle, int Index, uint8_t* Buffer, int BufferSize);
-    SSELex_API int      C_GetCharacterEditorID(EspInstance* handle, int Index, uint8_t* Buffer, int BufferSize);
-    SSELex_API int      C_GetCharacterVoiceType(EspInstance* handle, int Index, uint8_t* Buffer, int BufferSize);
-    SSELex_API int      C_GetCharacterGender(EspInstance* handle, int Index);
-    SSELex_API int      C_GetCharacterLinkedInfoCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedInfo(EspInstance* handle, int Index, int LinkIndex);
-    SSELex_API int      C_GetCharacterLinkedFactionCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedFaction(EspInstance* handle, int Index, int LinkIndex);
-    SSELex_API int      C_GetCharacterLinkedRaceCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedRace(EspInstance* handle, int Index, int LinkIndex);
-    SSELex_API int      C_GetCharacterLinkedVoiceTypeCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedVoiceType(EspInstance* handle, int Index, int LinkIndex);
-
-    // ── Dialogue context (new, based on offsets) ──────────────
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int SubOffset);
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset);
-    SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
-
-    SSELex_API int C_GetTitleIndexByBookDesc(EspInstance* Handle, int RecordOffset, int DescSubOffset);
-    SSELex_API int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset);
+    return new EspInstance();
 }
+static void DestroyInstanceImpl(EspInstance* h) { delete h; }
 
-// ── Implementation ────────────────────────────────────────────
+static const char* GetVersionImpl() { return Version.c_str(); }
+static int GetVersionLengthImpl() { return static_cast<int>(Version.length()); }
 
-EspInstance* C_CreateInstance() { return new EspInstance(); }
-void         C_DestroyInstance(EspInstance* h) { delete h; }
-
-const char* C_GetVersion() { return Version.c_str(); }
-int          C_GetVersionLength() { return static_cast<int>(Version.length()); }
-
-void C_InitFilter(EspInstance* h)
+static void InitFilterImpl(EspInstance* h)
 {
     if (!h) return;
-    delete h->Filter;
-    h->Filter = new RecordFilter();
+    h->Filter = std::make_unique<RecordFilter>();
 }
 
-int C_GetFilter(EspInstance* h, uint8_t* buffer, int bufferSize)
+static int GetFilterImpl(EspInstance* h, uint8_t* buffer, int bufferSize)
 {
     if (!h || !h->Filter) return -1;
     std::string result;
@@ -815,7 +495,7 @@ int C_GetFilter(EspInstance* h, uint8_t* buffer, int bufferSize)
     return len;
 }
 
-int C_SetSkyrimFilter(EspInstance* h)
+static int SetSkyrimFilterImpl(EspInstance* h)
 {
     if (!h || !h->Filter) return -1;
     std::unordered_map<std::string, std::vector<std::string>> Config =
@@ -838,7 +518,7 @@ int C_SetSkyrimFilter(EspInstance* h)
     return static_cast<int>(h->Filter->CurrentConfig.size());
 }
 
-int C_SetFilter(EspInstance* h, const char* ParentSig, const char** ChildSigs, int ChildCount)
+static int SetFilterImpl(EspInstance* h, const char* ParentSig, const char** ChildSigs, int ChildCount)
 {
     if (!h || !h->Filter || !ParentSig) return -1;
     std::string Parent(ParentSig);
@@ -850,7 +530,7 @@ int C_SetFilter(EspInstance* h, const char* ParentSig, const char** ChildSigs, i
     return static_cast<int>(Vec.size());
 }
 
-void C_ClearFilter(EspInstance* Handle)
+static void ClearFilterImpl(EspInstance* Handle)
 {
     if (Handle && Handle->Filter)
     {
@@ -859,12 +539,12 @@ void C_ClearFilter(EspInstance* Handle)
 }
 
 
-C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset)
+static C_LinkDIAL GetDialContextByDialImpl(EspInstance* handle, int RecordOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByDialIndex(RecordOffset);
+    std::unique_ptr<LinkDIAL> context(handle->Data->GetDialContextByDialIndex(RecordOffset));
     if (!context) return result;
 
     result.HasData = 1;
@@ -876,7 +556,7 @@ C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffse
     result.LinkCount = (uint32_t)context->Links.size();
     if (result.LinkCount > 0)
     {
-        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount];
+        auto linkArray = std::make_unique<C_DialResponseNode[]>(result.LinkCount);
         for (uint32_t i = 0; i < result.LinkCount; ++i)
         {
             linkArray[i].ResponseID = context->Links[i].ResponseID;
@@ -884,21 +564,20 @@ C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffse
             linkArray[i].RecordOffset = context->Links[i].RecordOffset;
             linkArray[i].SubOffset = context->Links[i].SubOffset;
         }
-        result.Links = linkArray;
+        result.Links = linkArray.release();
     }
 
-    delete context;
     return result;
 }
 
 // --- New dialogue context API ---
 
-C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int SubOffset)
+static C_LinkDIAL GetDialContextImpl(EspInstance* handle, int RecordOffset, int SubOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByIndex(RecordOffset, SubOffset);
+    std::unique_ptr<LinkDIAL> context(handle->Data->GetDialContextByIndex(RecordOffset, SubOffset));
     if (!context) return result;
 
     result.HasData = 1;
@@ -912,7 +591,7 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int
     result.LinkCount = static_cast<uint32_t>(context->Links.size());
     if (result.LinkCount > 0)
     {
-        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount];
+        auto linkArray = std::make_unique<C_DialResponseNode[]>(result.LinkCount);
         for (size_t i = 0; i < result.LinkCount; ++i)
         {
             linkArray[i].ResponseID = context->Links[i].ResponseID;
@@ -920,14 +599,13 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int
             linkArray[i].RecordOffset = context->Links[i].RecordOffset;
             linkArray[i].SubOffset = context->Links[i].SubOffset;
         }
-        result.Links = linkArray;
+        result.Links = linkArray.release();
     }
 
-    delete context;
     return result;
 }
 
-void __stdcall C_FreeDialContext(C_LinkDIAL* context)
+static void FreeDialContextImpl(C_LinkDIAL* context)
 {
     if (!context) return;
 
@@ -937,13 +615,13 @@ void __stdcall C_FreeDialContext(C_LinkDIAL* context)
     context->HasData = 0;
 }
 
-int C_GetTitleIndexByBookDesc(EspInstance* Handle, int RecordOffset, int DescSubOffset)
+static int GetTitleIndexByBookDescImpl(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
     if (!Handle || !Handle->Data) return -1;
     return Handle->Data->GetTitleIndexByBookDesc(RecordOffset, DescSubOffset);
 }
 
-int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset)
+static int GetDescIndexByBookTitleImpl(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
     if (!Handle || !Handle->Data) return -1;
     return Handle->Data->GetDescIndexByBookTitle(RecordOffset, DescSubOffset);
@@ -951,69 +629,75 @@ int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSub
 
 // --- Other C API functions (unchanged) ---
 
-int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
+static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
 {
-    if (!Instance) return -1;
+    if (!Instance || !Instance->Filter || !EspPath) return -1;
 
-    // Reset per-read state
-    delete Instance->TextValidator; Instance->TextValidator = new ESP_HeuristicAnalysis();
-    delete Instance->CharTracker;   Instance->CharTracker = new CharacterTracker();
-    Instance->ClearData();
-
-    Instance->LastSetPath = EspPath;
-    Instance->Data = new EspData();
-
-    std::ifstream Stream(EspPath, std::ios::binary);
-    if (!Stream.is_open()) return 1;
-
-    while (Stream.good() && Stream.peek() != EOF)
+    try
     {
-        char Sig[4];
-        if (!Stream.read(Sig, 4)) break;
+        std::ifstream stream(EspPath, std::ios::binary);
+        if (!stream.is_open()) return 1;
 
-        if (IsGRUP(Sig)) ParseGroupIterative_Inst(Instance, Stream);
-        else ParseRecord_Inst(Instance, Stream, Sig, 0);
+        EspParsedDocument parsed = EspParser::Parse(stream, *Instance->Filter);
+        Instance->Filter->FileIsLocalized = parsed.IsLocalized();
+        Instance->TextValidator = parsed.TakeAnalysis();
+        Instance->CharTracker = parsed.TakeCharacters();
+        Instance->Data = parsed.TakeData();
+        Instance->CharacterIndexCache.clear();
+        Instance->CharacterCacheDirty = true;
+        Instance->LastSetPath = EspPath;
+
+        return 0;
     }
-
-    FlushDeferredInfoLinks_Inst(Instance);
-    Instance->CharacterCacheDirty = true;
-
-    Instance->Data->BuildDialTopologyIndex();
-
-    return 0;
+    catch (...)
+    {
+        return 1;
+    }
 }
 
-bool C_SaveEsp(EspInstance* h, const char* Utf8Path)
+static bool SaveEspImpl(EspInstance* h, const char* Utf8Path)
 {
     return SaveEsp_Inst(h, Utf8Path);
 }
 
-void C_Clear(EspInstance* h) { if (h) h->ClearData(); }
+static void ClearImpl(EspInstance* h) { if (h) h->ClearData(); }
 
-const char* C_GetFieldReport(EspInstance* h)
+static const char* GetFieldReportImpl(EspInstance* h)
 {
     if (!h || !h->TextValidator) { static const char* e = "Validator not initialized"; return e; }
-    static std::string buf; buf = h->TextValidator->ExportFieldReport(); return buf.c_str();
+    thread_local std::string buffer;
+    buffer = h->TextValidator->ExportFieldReport();
+    return buffer.c_str();
 }
-int C_GetFieldReportLength(EspInstance* h)
+static int GetFieldReportLengthImpl(EspInstance* h)
 {
     if (!h || !h->TextValidator) return 0;
-    static std::string buf; buf = h->TextValidator->ExportFieldReport(); return static_cast<int>(buf.length());
+    thread_local std::string buffer;
+    buffer = h->TextValidator->ExportFieldReport();
+    return static_cast<int>(buffer.length());
 }
 
-EspRecord** C_SearchBySig(EspInstance* h, const char* ParentSig, const char* ChildSig, int* OutCount)
+static EspRecord** SearchBySigImpl(EspInstance* h, const char* ParentSig, const char* ChildSig, int* OutCount)
 {
     *OutCount = 0;
     if (!h || !h->Data) return nullptr;
     std::vector<EspRecord> Matches = h->Data->SearchBySig(ParentSig, ChildSig ? ChildSig : "");
     *OutCount = static_cast<int>(Matches.size());
     if (Matches.empty()) return nullptr;
-    EspRecord** Result = new EspRecord * [*OutCount];
-    for (int i = 0; i < *OutCount; ++i) Result[i] = new EspRecord(Matches[i]);
-    return Result;
+    auto result = std::make_unique<EspRecord*[]>(static_cast<std::size_t>(*OutCount));
+    std::vector<std::unique_ptr<EspRecord>> records;
+    records.reserve(static_cast<std::size_t>(*OutCount));
+    for (int i = 0; i < *OutCount; ++i)
+    {
+        records.push_back(std::make_unique<EspRecord>(Matches[static_cast<std::size_t>(i)]));
+        result[static_cast<std::size_t>(i)] = records.back().get();
+    }
+    for (auto& record : records)
+        record.release();
+    return result.release();
 }
 
-void FreeSearchResults(EspRecord** Arr, int Count)
+static void FreeSearchResultsImpl(EspRecord** Arr, int Count)
 {
     if (!Arr) return;
     for (int i = 0; i < Count; ++i) delete Arr[i];
@@ -1021,46 +705,58 @@ void FreeSearchResults(EspRecord** Arr, int Count)
 }
 
 // Record accessors (unchanged)
-const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* r, int i)
+static const SubRecordData* GetSubRecordDataPtrImpl(EspRecord* r, int i)
 {
     if (!r || i < 0 || i >= (int)r->SubRecords.size()) return nullptr; return &r->SubRecords[i];
 }
-int C_GetRecordSig(EspRecord* r, uint8_t* b, int bs)
+static int GetRecordSigImpl(EspRecord* r, uint8_t* b, int bs)
 {
     if (!r) return -1; int l = (int)r->Sig.size();
     if (b && bs > l) { std::memcpy(b, r->Sig.c_str(), l); b[l] = 0; } return l;
 }
-uint32_t    C_GetRecordFormID(EspRecord* r) { return r ? r->FormID : 0; }
-const char* C_GetRecordEditorID(EspRecord* r) { if (!r) return nullptr; static std::string buf; buf = r->EditorID; return buf.c_str(); }
-uint32_t    C_GetRecordFlags(EspRecord* r) { return r ? r->Flags : 0; }
-int         C_GetRecordIndex(EspRecord* r) { return r ? r->Index : 0; }
-int         C_GetSubRecordCount(EspRecord* r) { return r ? (int)r->SubRecords.size() : 0; }
+static uint32_t GetRecordFormIdImpl(EspRecord* r) { return r ? r->FormID : 0; }
+static const char* GetRecordEditorIdImpl(EspRecord* r)
+{
+    if (!r) return nullptr;
+    thread_local std::string buffer;
+    buffer = r->EditorID;
+    return buffer.c_str();
+}
+static uint32_t GetRecordFlagsImpl(EspRecord* r) { return r ? r->Flags : 0; }
+static int GetRecordIndexImpl(EspRecord* r) { return r ? r->Index : 0; }
+static int GetSubRecordCountImpl(EspRecord* r) { return r ? (int)r->SubRecords.size() : 0; }
 
-int         C_SubRecordData_GetOccurrenceIndex(const SubRecordData* s) { return s ? s->OccurrenceIndex : -1; }
-int         C_SubRecordData_GetIndex(const SubRecordData* s) { return s ? s->Index : -1; }
-const char* C_SubRecordData_GetSig(const SubRecordData* s) { return s ? s->Sig.c_str() : nullptr; }
-const char* C_SubRecordData_GetString(const SubRecordData* s) { if (!s) return nullptr; static std::string buf; buf = s->GetString(); return buf.c_str(); }
-bool        C_SubRecordData_IsLocalized(const SubRecordData* s) { return s ? s->IsLocalized : false; }
-uint32_t    C_SubRecordData_GetStringID(const SubRecordData* s) { return s ? s->StringID : 0; }
-int         C_SubRecordData_GetDataSize(const SubRecordData* s) { return s ? (int)s->Data.size() : 0; }
-bool        C_SubRecordData_GetData(const SubRecordData* s, uint8_t* b, int bs)
+static int GetSubRecordOccurrenceIndexImpl(const SubRecordData* s) { return s ? s->OccurrenceIndex : -1; }
+static int GetSubRecordIndexImpl(const SubRecordData* s) { return s ? s->Index : -1; }
+static const char* GetSubRecordSigImpl(const SubRecordData* s) { return s ? s->Sig.c_str() : nullptr; }
+static const char* GetSubRecordStringImpl(const SubRecordData* s)
+{
+    if (!s) return nullptr;
+    thread_local std::string buffer;
+    buffer = s->GetString();
+    return buffer.c_str();
+}
+static bool IsSubRecordLocalizedImpl(const SubRecordData* s) { return s ? s->IsLocalized : false; }
+static uint32_t GetSubRecordStringIdImpl(const SubRecordData* s) { return s ? s->StringID : 0; }
+static int GetSubRecordDataSizeImpl(const SubRecordData* s) { return s ? (int)s->Data.size() : 0; }
+static bool GetSubRecordDataImpl(const SubRecordData* s, uint8_t* b, int bs)
 {
     if (!s || !b) return false; if (bs < (int)s->Data.size()) return false;
     std::memcpy(b, s->Data.data(), s->Data.size()); return true;
 }
-int C_SubRecordData_GetStringUtf8(const SubRecordData* s, uint8_t* b, int bs)
+static int GetSubRecordStringUtf8Impl(const SubRecordData* s, uint8_t* b, int bs)
 {
     if (!s) return -1; std::string str = s->GetString(); int l = (int)strlen(str.c_str());
     if (b && bs > l) std::memcpy(b, str.c_str(), l + 1); return l;
 }
-int C_SubRecordData_GetSigUtf8(const SubRecordData* s, uint8_t* b, int bs)
+static int GetSubRecordSigUtf8Impl(const SubRecordData* s, uint8_t* b, int bs)
 {
     if (!s) return -1; int l = (int)s->Sig.size();
     if (b && bs > l) { std::memcpy(b, s->Sig.c_str(), l); b[l] = 0; } return l;
 }
 
 // Modify
-bool C_ModifySubRecordByOffset(EspInstance* h, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
+static bool ModifySubRecordByOffsetImpl(EspInstance* h, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
 {
     if (!h || !h->Data) return false;
     std::vector<EspRecord>& Records = (IsCell == 1) ? h->Data->CellRecords : h->Data->Records;
@@ -1080,7 +776,7 @@ bool C_ModifySubRecordByOffset(EspInstance* h, int IsCell, int RecordOffset, int
     return true;
 }
 
-bool C_ModifySubRecord(EspInstance* h, uint32_t FormID, const char* RecordSig, const char* SubSig,
+static bool ModifySubRecordImpl(EspInstance* h, uint32_t FormID, const char* RecordSig, const char* SubSig,
     int OccurrenceIndex, int Index, const char* NewUtf8Data)
 {
     if (!h || !h->Data) return false;
@@ -1108,30 +804,490 @@ bool C_ModifySubRecord(EspInstance* h, uint32_t FormID, const char* RecordSig, c
 }
 
 // Character tracker
-void C_ClearCharacterTracker(EspInstance* h)
+static void ClearCharacterTrackerImpl(EspInstance* h)
 {
     if (!h) return;
     if (h->CharTracker) h->CharTracker->ClearAll();
     h->CharacterIndexCache.clear();
     h->CharacterCacheDirty = true;
 }
-int      C_GetCharacterCount(EspInstance* h) { EnsureCharacterCache(h); return (int)h->CharacterIndexCache.size(); }
-uint32_t C_GetCharacterFormID(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? r->NpcFormID : 0; }
-int      C_GetCharacterName(EspInstance* h, int i, uint8_t* b, int bs) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return -1; return WriteStringToBuffer(r->Name, b, bs); }
-int      C_GetCharacterEditorID(EspInstance* h, int i, uint8_t* b, int bs) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return -1; return WriteStringToBuffer(r->EditorID, b, bs); }
-int      C_GetCharacterVoiceType(EspInstance* h, int i, uint8_t* b, int bs) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return -1; return WriteStringToBuffer(r->VoiceType, b, bs); }
-int      C_GetCharacterGender(EspInstance* h, int i) {
+static int GetCharacterCountImpl(EspInstance* h) { EnsureCharacterCache(h); return (int)h->CharacterIndexCache.size(); }
+static uint32_t GetCharacterFormIdImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? record->NpcFormID : 0;
+}
+
+static int GetCharacterNameImpl(EspInstance* h, int i, uint8_t* b, int bs)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? WriteStringToBuffer(record->Name, b, bs) : -1;
+}
+
+static int GetCharacterEditorIdImpl(EspInstance* h, int i, uint8_t* b, int bs)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? WriteStringToBuffer(record->EditorID, b, bs) : -1;
+}
+
+static int GetCharacterVoiceTypeImpl(EspInstance* h, int i, uint8_t* b, int bs)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? WriteStringToBuffer(record->VoiceType, b, bs) : -1;
+}
+static int GetCharacterGenderImpl(EspInstance* h, int i) {
     const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return 0;
     switch (r->Gender) { case CharacterGender::Male: return 1; case CharacterGender::Female: return 2; default: return 0; }
 }
-int      C_GetCharacterLinkedInfoCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedInfos.size() : 0; }
-uint32_t C_GetCharacterLinkedInfo(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedInfos.size()) return 0; return r->LinkedInfos[li]; }
-int      C_GetCharacterLinkedFactionCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedFactions.size() : 0; }
-uint32_t C_GetCharacterLinkedFaction(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedFactions.size()) return 0; return r->LinkedFactions[li]; }
-int      C_GetCharacterLinkedRaceCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedRaces.size() : 0; }
-uint32_t C_GetCharacterLinkedRace(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedRaces.size()) return 0; return r->LinkedRaces[li]; }
-int      C_GetCharacterLinkedVoiceTypeCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedVoiceTypes.size() : 0; }
-uint32_t C_GetCharacterLinkedVoiceType(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedVoiceTypes.size()) return 0; return r->LinkedVoiceTypes[li]; }
+static int GetCharacterLinkedInfoCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedInfos.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedInfoImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedInfos.size())) return 0;
+    return record->LinkedInfos[static_cast<std::size_t>(li)];
+}
+
+static int GetCharacterLinkedFactionCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedFactions.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedFactionImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedFactions.size())) return 0;
+    return record->LinkedFactions[static_cast<std::size_t>(li)];
+}
+
+static int GetCharacterLinkedRaceCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedRaces.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedRaceImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedRaces.size())) return 0;
+    return record->LinkedRaces[static_cast<std::size_t>(li)];
+}
+
+static int GetCharacterLinkedVoiceTypeCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedVoiceTypes.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedVoiceTypeImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedVoiceTypes.size())) return 0;
+    return record->LinkedVoiceTypes[static_cast<std::size_t>(li)];
+}
+
+namespace
+{
+    struct AbiErrorState
+    {
+        EspReaderStatus Status = ESP_READER_STATUS_OK;
+        char Message[256]{};
+    };
+
+    thread_local AbiErrorState LastAbiError;
+
+    void ClearAbiError() noexcept
+    {
+        LastAbiError.Status = ESP_READER_STATUS_OK;
+        LastAbiError.Message[0] = '\0';
+    }
+
+    void SetAbiError(EspReaderStatus status, const char* message) noexcept
+    {
+        LastAbiError.Status = status;
+        const std::size_t length = (std::min)(std::strlen(message), sizeof(LastAbiError.Message) - 1);
+        std::memcpy(LastAbiError.Message, message, length);
+        LastAbiError.Message[length] = '\0';
+    }
+
+    void CaptureAbiException() noexcept
+    {
+        try
+        {
+            throw;
+        }
+        catch (const std::bad_alloc&)
+        {
+            SetAbiError(ESP_READER_STATUS_OUT_OF_MEMORY, "EspReader could not allocate required memory.");
+        }
+        catch (const std::invalid_argument&)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "EspReader rejected an invalid argument.");
+        }
+        catch (const std::out_of_range&)
+        {
+            SetAbiError(ESP_READER_STATUS_OUT_OF_RANGE, "EspReader rejected an out-of-range value.");
+        }
+        catch (const std::ios_base::failure&)
+        {
+            SetAbiError(ESP_READER_STATUS_IO_ERROR, "EspReader encountered an input or output error.");
+        }
+        catch (const std::exception&)
+        {
+            SetAbiError(ESP_READER_STATUS_INTERNAL_ERROR, "EspReader encountered an internal error.");
+        }
+        catch (...)
+        {
+            SetAbiError(ESP_READER_STATUS_INTERNAL_ERROR, "EspReader encountered an unknown internal error.");
+        }
+    }
+
+    template<typename TResult, typename TAction>
+    TResult InvokeAbi(TResult failureValue, TAction&& action) noexcept
+    {
+        try
+        {
+            ClearAbiError();
+            return action();
+        }
+        catch (...)
+        {
+            CaptureAbiException();
+            return failureValue;
+        }
+    }
+
+    template<typename TAction>
+    void InvokeAbi(TAction&& action) noexcept
+    {
+        try
+        {
+            ClearAbiError();
+            action();
+        }
+        catch (...)
+        {
+            CaptureAbiException();
+        }
+    }
+}
+
+uint32_t ESP_READER_CALL C_GetAbiVersion(void) noexcept
+{
+    return ESP_READER_ABI_VERSION;
+}
+
+EspReaderStatus ESP_READER_CALL C_GetLastStatus(void) noexcept
+{
+    return LastAbiError.Status;
+}
+
+int32_t ESP_READER_CALL C_GetLastErrorUtf8(uint8_t* buffer, int32_t bufferSize) noexcept
+{
+    const std::size_t length = std::strlen(LastAbiError.Message);
+    if (length > static_cast<std::size_t>((std::numeric_limits<int32_t>::max)()))
+        return -1;
+    if (buffer != nullptr && bufferSize > static_cast<int32_t>(length))
+        std::memcpy(buffer, LastAbiError.Message, length + 1);
+    return static_cast<int32_t>(length);
+}
+
+#define ESP_READER_WRAP_CDECL(returnType, name, implementation, failureValue, parameters, arguments) \
+    returnType ESP_READER_CALL name parameters noexcept \
+    { \
+        return InvokeAbi<returnType>(failureValue, [&]() -> returnType { return implementation arguments; }); \
+    }
+
+#define ESP_READER_WRAP_STDCALL(returnType, name, implementation, failureValue, parameters, arguments) \
+    returnType ESP_READER_DIALOG_CALL name parameters noexcept \
+    { \
+        return InvokeAbi<returnType>(failureValue, [&]() -> returnType { return implementation arguments; }); \
+    }
+
+#define ESP_READER_WRAP_VOID_CDECL(name, implementation, parameters, arguments) \
+    void ESP_READER_CALL name parameters noexcept \
+    { \
+        InvokeAbi([&]() { implementation arguments; }); \
+    }
+
+#define ESP_READER_WRAP_VOID_STDCALL(name, implementation, parameters, arguments) \
+    void ESP_READER_DIALOG_CALL name parameters noexcept \
+    { \
+        InvokeAbi([&]() { implementation arguments; }); \
+    }
+
+ESP_READER_WRAP_CDECL(
+    EspInstance*, C_CreateInstance, CreateInstanceImpl, nullptr, (void), ())
+ESP_READER_WRAP_VOID_CDECL(
+    C_DestroyInstance, DestroyInstanceImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    const char*, C_GetVersion, GetVersionImpl, nullptr, (void), ())
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetVersionLength, GetVersionLengthImpl, -1, (void), ())
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SetSkyrimFilter, SetSkyrimFilterImpl, -1, (EspInstance* handle), (handle))
+ESP_READER_WRAP_VOID_CDECL(
+    C_ClearFilter, ClearFilterImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_VOID_CDECL(
+    C_Clear, ClearImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    const char*, C_GetFieldReport, GetFieldReportImpl, nullptr, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetFieldReportLength, GetFieldReportLengthImpl, -1, (EspInstance* handle), (handle))
+ESP_READER_WRAP_VOID_CDECL(
+    FreeSearchResults, FreeSearchResultsImpl, (EspRecord** records, int32_t count), (records, count))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetRecordSig, GetRecordSigImpl, -1,
+    (EspRecord* record, uint8_t* buffer, int32_t bufferSize), (record, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetRecordFormID, GetRecordFormIdImpl, 0, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    const char*, C_GetRecordEditorID, GetRecordEditorIdImpl, nullptr, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetRecordFlags, GetRecordFlagsImpl, 0, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetRecordIndex, GetRecordIndexImpl, -1, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetSubRecordCount, GetSubRecordCountImpl, -1, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    const SubRecordData*, C_GetSubRecordData_Ptr, GetSubRecordDataPtrImpl, nullptr,
+    (EspRecord* record, int32_t index), (record, index))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetOccurrenceIndex, GetSubRecordOccurrenceIndexImpl, -1,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetIndex, GetSubRecordIndexImpl, -1,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    const char*, C_SubRecordData_GetSig, GetSubRecordSigImpl, nullptr,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    const char*, C_SubRecordData_GetString, GetSubRecordStringImpl, nullptr,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_SubRecordData_IsLocalized, IsSubRecordLocalizedImpl, 0,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_SubRecordData_GetStringID, GetSubRecordStringIdImpl, 0,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetDataSize, GetSubRecordDataSizeImpl, -1,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_SubRecordData_GetData, GetSubRecordDataImpl, 0,
+    (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
+    (subRecord, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetStringUtf8, GetSubRecordStringUtf8Impl, -1,
+    (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
+    (subRecord, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetSigUtf8, GetSubRecordSigUtf8Impl, -1,
+    (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
+    (subRecord, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_ModifySubRecordByOffset, ModifySubRecordByOffsetImpl, 0,
+    (EspInstance* handle, int32_t isCell, int32_t recordOffset, int32_t subOffset, const char* newUtf8Data),
+    (handle, isCell, recordOffset, subOffset, newUtf8Data))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_ModifySubRecord, ModifySubRecordImpl, 0,
+    (EspInstance* handle, uint32_t formId, const char* recordSig, const char* subSig,
+        int32_t occurrenceIndex, int32_t globalIndex, const char* newUtf8Data),
+    (handle, formId, recordSig, subSig, occurrenceIndex, globalIndex, newUtf8Data))
+ESP_READER_WRAP_VOID_CDECL(
+    C_ClearCharacterTracker, ClearCharacterTrackerImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterFormID, GetCharacterFormIdImpl, 0,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterName, GetCharacterNameImpl, -1,
+    (EspInstance* handle, int32_t index, uint8_t* buffer, int32_t bufferSize),
+    (handle, index, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterEditorID, GetCharacterEditorIdImpl, -1,
+    (EspInstance* handle, int32_t index, uint8_t* buffer, int32_t bufferSize),
+    (handle, index, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterVoiceType, GetCharacterVoiceTypeImpl, -1,
+    (EspInstance* handle, int32_t index, uint8_t* buffer, int32_t bufferSize),
+    (handle, index, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterGender, GetCharacterGenderImpl, 0,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedInfoCount, GetCharacterLinkedInfoCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedInfo, GetCharacterLinkedInfoImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedFactionCount, GetCharacterLinkedFactionCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedFaction, GetCharacterLinkedFactionImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedRaceCount, GetCharacterLinkedRaceCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedRace, GetCharacterLinkedRaceImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedVoiceTypeCount, GetCharacterLinkedVoiceTypeCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedVoiceType, GetCharacterLinkedVoiceTypeImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_STDCALL(
+    C_LinkDIAL, C_GetDialContext, GetDialContextImpl, C_LinkDIAL{},
+    (EspInstance* handle, int32_t recordOffset, int32_t subOffset),
+    (handle, recordOffset, subOffset))
+ESP_READER_WRAP_STDCALL(
+    C_LinkDIAL, C_GetDialContextByDial, GetDialContextByDialImpl, C_LinkDIAL{},
+    (EspInstance* handle, int32_t recordOffset), (handle, recordOffset))
+ESP_READER_WRAP_VOID_STDCALL(
+    C_FreeDialContext, FreeDialContextImpl, (C_LinkDIAL* context), (context))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetTitleIndexByBookDesc, GetTitleIndexByBookDescImpl, -1,
+    (EspInstance* handle, int32_t recordOffset, int32_t descSubOffset),
+    (handle, recordOffset, descSubOffset))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetDescIndexByBookTitle, GetDescIndexByBookTitleImpl, -1,
+    (EspInstance* handle, int32_t recordOffset, int32_t descSubOffset),
+    (handle, recordOffset, descSubOffset))
+
+void ESP_READER_CALL C_InitFilter(EspInstance* handle) noexcept
+{
+    InvokeAbi([&]()
+    {
+        if (handle == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle is null.");
+            return;
+        }
+        InitFilterImpl(handle);
+    });
+}
+
+int32_t ESP_READER_CALL C_GetFilter(EspInstance* handle, uint8_t* buffer, int32_t bufferSize) noexcept
+{
+    return InvokeAbi<int32_t>(-1, [&]()
+    {
+        if (handle == nullptr || handle->Filter == nullptr || bufferSize < 0)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The filter request is invalid.");
+            return -1;
+        }
+        const int32_t length = GetFilterImpl(handle, buffer, bufferSize);
+        if (buffer != nullptr && bufferSize <= length)
+            SetAbiError(ESP_READER_STATUS_BUFFER_TOO_SMALL, "The filter buffer is too small.");
+        return length;
+    });
+}
+
+int32_t ESP_READER_CALL C_SetFilter(
+    EspInstance* handle,
+    const char* parentSig,
+    const char** childSigs,
+    int32_t childCount) noexcept
+{
+    return InvokeAbi<int32_t>(-1, [&]()
+    {
+        if (handle == nullptr || handle->Filter == nullptr || parentSig == nullptr || childCount < 0 ||
+            (childCount > 0 && childSigs == nullptr))
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The filter configuration is invalid.");
+            return -1;
+        }
+        for (int32_t index = 0; index < childCount; ++index)
+        {
+            if (childSigs[index] == nullptr)
+            {
+                SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "A child signature is null.");
+                return -1;
+            }
+        }
+        return SetFilterImpl(handle, parentSig, childSigs, childCount);
+    });
+}
+
+int32_t ESP_READER_CALL C_ReadEsp(EspInstance* handle, const wchar_t* espPath) noexcept
+{
+    return InvokeAbi<int32_t>(1, [&]()
+    {
+        if (handle == nullptr || espPath == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle or UTF-16 path is null.");
+            return -1;
+        }
+        const int32_t result = ReadEspImpl(handle, espPath);
+        if (result != 0)
+            SetAbiError(ESP_READER_STATUS_PARSE_ERROR, "The plugin could not be opened or parsed.");
+        return result;
+    });
+}
+
+EspReaderBool ESP_READER_CALL C_SaveEsp(EspInstance* handle, const char* utf8Path) noexcept
+{
+    return InvokeAbi<EspReaderBool>(0, [&]() -> EspReaderBool
+    {
+        if (handle == nullptr || utf8Path == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle or UTF-8 path is null.");
+            return 0;
+        }
+        const EspReaderBool result = SaveEspImpl(handle, utf8Path) ? 1 : 0;
+        if (result == 0)
+            SetAbiError(ESP_READER_STATUS_IO_ERROR, "The plugin could not be saved.");
+        return result;
+    });
+}
+
+EspRecord** ESP_READER_CALL C_SearchBySig(
+    EspInstance* handle,
+    const char* parentSig,
+    const char* childSig,
+    int32_t* outCount) noexcept
+{
+    return InvokeAbi<EspRecord**>(nullptr, [&]()
+    {
+        if (outCount == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The search count pointer is null.");
+            return static_cast<EspRecord**>(nullptr);
+        }
+        *outCount = 0;
+        if (handle == nullptr || parentSig == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The search handle or parent signature is null.");
+            return static_cast<EspRecord**>(nullptr);
+        }
+        return SearchBySigImpl(handle, parentSig, childSig, outCount);
+    });
+}
+
+int32_t ESP_READER_CALL C_GetCharacterCount(EspInstance* handle) noexcept
+{
+    return InvokeAbi<int32_t>(-1, [&]()
+    {
+        if (handle == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle is null.");
+            return -1;
+        }
+        return GetCharacterCountImpl(handle);
+    });
+}
+
+#undef ESP_READER_WRAP_CDECL
+#undef ESP_READER_WRAP_STDCALL
+#undef ESP_READER_WRAP_VOID_CDECL
+#undef ESP_READER_WRAP_VOID_STDCALL
 
 BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
 

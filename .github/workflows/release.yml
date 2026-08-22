@@ -14,29 +14,47 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Restore miniz
         shell: pwsh
         run: .\scripts\Restore-Miniz.ps1
 
-      - name: Build x64 release
+      - name: Build x64 release without warnings
         shell: pwsh
-        run: msbuild .\EspReader.sln /m /p:Configuration=Release /p:Platform=x64
+        run: .\scripts\Invoke-NativeBuild.ps1 -Configuration Release -Platform x64 -ArtifactDirectory .\.ci-artifacts\build
 
-      - name: Create checksum
+      - name: Run parser regression tests
+        shell: pwsh
+        run: .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64 -ResultsDirectory .\.ci-artifacts\tests
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-diagnostics
+          path: .ci-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Create release checksums
         shell: pwsh
         run: |
-          $artifact = ".\x64\Release\EspReader.dll"
-          if (-not (Test-Path -LiteralPath $artifact)) {
+          $artifacts = @(
+              ".\x64\Release\EspReader.dll"
+              ".\EspReader\EspReaderApi.h"
+          )
+          foreach ($artifact in $artifacts) {
+            if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
               throw "Release artifact was not produced: $artifact"
-          }
+            }
 
-          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  EspReader.dll" | Set-Content "$artifact.sha256" -Encoding ascii
+            $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path -Leaf $artifact)" | Set-Content "$artifact.sha256" -Encoding ascii
+          }
 
       - name: Publish GitHub Release
         shell: pwsh
@@ -46,5 +64,7 @@ jobs:
           gh release create "$env:GITHUB_REF_NAME" `
             ".\x64\Release\EspReader.dll" `
             ".\x64\Release\EspReader.dll.sha256" `
+            ".\EspReader\EspReaderApi.h" `
+            ".\EspReader\EspReaderApi.h.sha256" `
             --generate-notes `
             --verify-tag

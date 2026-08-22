@@ -618,7 +618,7 @@ public:
 
 	void OnSubRecord(CharacterTracker* CurrentTracker, SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
 	{
-		if (!CurrentTracker)
+		if (!CurrentTracker || (!DataPtr && Size != 0))
 			return;
 
 		if (CurrentTracker && DataPtr && Size > 0)
@@ -703,9 +703,7 @@ public:
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredInfoLinks,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredVoiceTypeLinks,
 		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredFactionLinks,
-		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredRaceLinks,
-
-		const char* Str, const uint8_t* DataPtr, size_t Size)
+		unordered_map<uint32_t, std::vector<uint32_t>>* DeferredRaceLinks)
 	{
 		if (Sig == "INFO" && !TempResponses_.empty())
 		{
@@ -726,14 +724,14 @@ public:
 		if (Sig == "NPC_")
 		{
 			std::string Name = G_Name;
-			std::string EditorID = this->EditorID;
+			std::string editorId = this->EditorID;
 			std::string VoiceType = G_VoiceType;
 			CharacterGender Gender = G_Gender;
 
 			if (HasPendingACBS)
 				Gender = PendingGenderFromACBS;
 
-			auto& npc = CurrentTracker->RegisterNpc(FormID, Name, EditorID, VoiceType, Gender);
+			auto& npc = CurrentTracker->RegisterNpc(FormID, Name, editorId, VoiceType, Gender);
 
 			if (HasPendingVTCK)
 			{
@@ -1456,8 +1454,11 @@ public:
 				std::string LowerText = Text;
 				std::string LowerQuery = Query;
 
-				std::transform(LowerText.begin(), LowerText.end(), LowerText.begin(), ::tolower);
-				std::transform(LowerQuery.begin(), LowerQuery.end(), LowerQuery.begin(), ::tolower);
+				auto toLower = [](unsigned char value) {
+					return static_cast<char>(std::tolower(value));
+				};
+				std::transform(LowerText.begin(), LowerText.end(), LowerText.begin(), toLower);
+				std::transform(LowerQuery.begin(), LowerQuery.end(), LowerQuery.begin(), toLower);
 
 				return LowerText.find(LowerQuery) != std::string::npos;
 			}

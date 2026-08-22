@@ -1,0 +1,109 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'schedule'
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore miniz
+        shell: pwsh
+        run: .\scripts\Restore-Miniz.ps1
+
+      - name: Build x64 release without warnings
+        shell: pwsh
+        run: .\scripts\Invoke-NativeBuild.ps1 -Configuration Release -Platform x64 -ArtifactDirectory .\.ci-artifacts\build
+
+      - name: Run parser regression tests
+        shell: pwsh
+        run: .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64 -ResultsDirectory .\.ci-artifacts\tests
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-diagnostics
+          path: .ci-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
+
+  analysis:
+    if: github.event_name != 'schedule'
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore miniz
+        shell: pwsh
+        run: .\scripts\Restore-Miniz.ps1
+
+      - name: Run MSVC native analysis
+        shell: pwsh
+        run: .\scripts\Invoke-NativeBuild.ps1 -Configuration Release -Platform x64 -Analyze -ArtifactDirectory .\.ci-artifacts\analysis
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: analysis-diagnostics
+          path: .ci-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
+
+  sanitizer:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore miniz
+        shell: pwsh
+        run: .\scripts\Restore-Miniz.ps1
+
+      - name: Build x64 release with AddressSanitizer
+        shell: pwsh
+        run: .\scripts\Invoke-NativeBuild.ps1 -Configuration Release -Platform x64 -EnableAddressSanitizer -ArtifactDirectory .\.ci-artifacts\sanitizer
+
+      - name: Run parser regression tests
+        shell: pwsh
+        run: .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64 -EnableAddressSanitizer -ResultsDirectory .\.ci-artifacts\tests
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sanitizer-diagnostics
+          path: .ci-artifacts
+          if-no-files-found: ignore
+          retention-days: 7

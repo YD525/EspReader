@@ -24,14 +24,14 @@ public:
     {
         std::string RecordSig;
         std::string SubSig;
-        FieldType Type;
-        size_t MinSize;
-        size_t MaxSize;
-        bool HasFixedSize;
-        size_t FixedSize;
+        FieldType Type = UNKNOWN;
+        size_t MinSize = 0;
+        size_t MaxSize = 0;
+        bool HasFixedSize = false;
+        size_t FixedSize = 0;
 
-        size_t StringOffset;
-        bool IsNullTerminated;
+        size_t StringOffset = 0;
+        bool IsNullTerminated = false;
     };
 
     struct FieldStats
