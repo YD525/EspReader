@@ -25,7 +25,7 @@ Restore the pinned miniz sources and build the x64 Release configuration:
 
 ```powershell
 .\scripts\Restore-Miniz.ps1
-msbuild .\EspReader.sln /m /p:Configuration=Release /p:Platform=x64
+.\scripts\Invoke-NativeBuild.ps1 -Configuration Release -Platform x64
 .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64
 ```
 
@@ -33,6 +33,7 @@ The resulting library is written to `x64\Release\EspReader.dll`.
 
 The parser suite runs non-interactively through the Visual Studio C++ test runner. Its synthetic ESP/ESM
 fixtures and their license status are documented in `EspReader.Tests/Fixtures/README.md`.
+The pull-request, native-analysis, warning, diagnostic-artifact, and sanitizer policy is documented in `docs/ci.md`.
 
 ## Releases
 

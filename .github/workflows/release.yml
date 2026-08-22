@@ -23,13 +23,22 @@ jobs:
         shell: pwsh
         run: .\scripts\Restore-Miniz.ps1
 
-      - name: Build x64 release
+      - name: Build x64 release without warnings
         shell: pwsh
-        run: msbuild .\EspReader.sln /m /p:Configuration=Release /p:Platform=x64
+        run: .\scripts\Invoke-NativeBuild.ps1 -Configuration Release -Platform x64 -ArtifactDirectory .\.ci-artifacts\build
 
       - name: Run parser regression tests
         shell: pwsh
-        run: .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64
+        run: .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64 -ResultsDirectory .\.ci-artifacts\tests
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-diagnostics
+          path: .ci-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Create checksum
         shell: pwsh

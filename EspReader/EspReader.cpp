@@ -16,11 +16,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#ifdef SSELexApi_EXPORTS
 #define SSELex_API __declspec(dllexport)
-#else
-#define SSELex_API __declspec(dllimport)
-#endif
 
 
 #include "EspRecord.cpp"
@@ -98,7 +94,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.0.0.3";
+static const std::string Version = "1.0.0.4";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -200,8 +196,7 @@ static void ParseSubRecords(
     EspInstance* instance,
     EspBinaryReader& reader,
     std::uint64_t end,
-    EspRecord& record,
-    const char recordSignature[4])
+    EspRecord& record)
 {
     record.OnRecordBegin();
     while (reader.Position() < end)
@@ -244,10 +239,7 @@ static void ParseSubRecords(
         &instance->DeferredInfoLinks,
         &instance->DeferredVoiceTypeLinks,
         &instance->DeferredFactionLinks,
-        &instance->DeferredRaceLinks,
-        recordSignature,
-        nullptr,
-        0);
+        &instance->DeferredRaceLinks);
 }
 
 static void ParseRecord(
@@ -298,11 +290,11 @@ static void ParseRecord(
             reader.Reject("Compressed record data is invalid.");
 
         EspBinaryReader decompressedReader(decompressed.data(), decompressed.size());
-        ParseSubRecords(instance, decompressedReader, decompressedReader.Size(), record, header.Sig);
+        ParseSubRecords(instance, decompressedReader, decompressedReader.Size(), record);
     }
     else
     {
-        ParseSubRecords(instance, reader, recordEnd, record, header.Sig);
+        ParseSubRecords(instance, reader, recordEnd, record);
     }
 
     reader.RequireEnd(recordEnd, "Record data");
@@ -458,9 +450,9 @@ static inline uint64_t MakeRecordKey(uint32_t FormID, const std::string& Sig)
 struct OriginalSubRecord
 {
     std::string Sig;
-    int OccurrenceIndex;
-    std::size_t SerializedOffset;
-    std::size_t SerializedSize;
+    int OccurrenceIndex = 0;
+    std::size_t SerializedOffset = 0;
+    std::size_t SerializedSize = 0;
 };
 
 static std::unordered_map<uint64_t, const EspRecord*> BuildModifiedIndex(EspInstance* inst)
