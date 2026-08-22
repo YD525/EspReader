@@ -1,6 +1,8 @@
 #include "CppUnitTest.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -171,11 +173,11 @@ namespace
     class TemporaryFile
     {
     public:
-        TemporaryFile()
+        explicit TemporaryFile(const std::wstring& extension = L".esp")
         {
             static std::atomic<unsigned long> sequence{ 0 };
             _path = std::filesystem::temp_directory_path() /
-                (L"EspReaderTests-" + std::to_wstring(++sequence) + L".esp");
+                (L"EspReaderTests-" + std::to_wstring(++sequence) + extension);
         }
 
         ~TemporaryFile()
@@ -237,6 +239,58 @@ namespace
         return std::filesystem::path(path).parent_path();
     }
 
+    int HexValue(char value)
+    {
+        if (value >= '0' && value <= '9')
+            return value - '0';
+        if (value >= 'A' && value <= 'F')
+            return value - 'A' + 10;
+        if (value >= 'a' && value <= 'f')
+            return value - 'a' + 10;
+        return -1;
+    }
+
+    std::vector<std::uint8_t> ReadHexFixture(const wchar_t* name)
+    {
+        const std::filesystem::path path = GetTestModuleDirectory() / L"Fixtures" / name;
+        std::ifstream input(path, std::ios::binary);
+        if (!input)
+            throw std::runtime_error("Unable to open a documented parser fixture.");
+
+        std::vector<std::uint8_t> bytes;
+        int highNibble = -1;
+        char character = 0;
+        while (input.get(character))
+        {
+            if (std::isspace(static_cast<unsigned char>(character)))
+                continue;
+
+            const int value = HexValue(character);
+            if (value < 0)
+                throw std::runtime_error("A parser fixture contains a non-hexadecimal character.");
+
+            if (highNibble < 0)
+                highNibble = value;
+            else
+            {
+                bytes.push_back(static_cast<std::uint8_t>((highNibble << 4) | value));
+                highNibble = -1;
+            }
+        }
+
+        if (highNibble >= 0 || bytes.empty())
+            throw std::runtime_error("A parser fixture contains an incomplete hexadecimal byte.");
+        return bytes;
+    }
+
+    bool ContainsSequence(
+        const std::vector<std::uint8_t>& bytes,
+        const std::vector<std::uint8_t>& sequence)
+    {
+        return !sequence.empty() &&
+            std::search(bytes.begin(), bytes.end(), sequence.begin(), sequence.end()) != bytes.end();
+    }
+
     class EspApi
     {
     public:
@@ -250,6 +304,16 @@ namespace
         using GetSubRecordCount = int(*)(void*);
         using GetSubRecordData = const void*(*)(void*, int);
         using GetSubRecordString = const char*(*)(const void*);
+        using IsSubRecordLocalized = bool(*)(const void*);
+        using GetSubRecordStringId = std::uint32_t(*)(const void*);
+        using ModifySubRecord = bool(*)(
+            void*,
+            std::uint32_t,
+            const char*,
+            const char*,
+            int,
+            int,
+            const char*);
 
         EspApi()
         {
@@ -278,6 +342,9 @@ namespace
             GetSubCount = Get<GetSubRecordCount>("C_GetSubRecordCount");
             GetSubData = Get<GetSubRecordData>("C_GetSubRecordData_Ptr");
             GetSubString = Get<GetSubRecordString>("C_SubRecordData_GetString");
+            IsLocalized = Get<IsSubRecordLocalized>("C_SubRecordData_IsLocalized");
+            GetStringId = Get<GetSubRecordStringId>("C_SubRecordData_GetStringID");
+            Modify = Get<ModifySubRecord>("C_ModifySubRecord");
         }
 
         ~EspApi()
@@ -298,6 +365,9 @@ namespace
         GetSubRecordCount GetSubCount = nullptr;
         GetSubRecordData GetSubData = nullptr;
         GetSubRecordString GetSubString = nullptr;
+        IsSubRecordLocalized IsLocalized = nullptr;
+        GetSubRecordStringId GetStringId = nullptr;
+        ModifySubRecord Modify = nullptr;
 
     private:
         template<typename T>
@@ -336,9 +406,13 @@ namespace
         void* _handle;
     };
 
-    int ReadFixture(EspApi& api, void* handle, const std::vector<std::uint8_t>& bytes)
+    int ReadFixture(
+        EspApi& api,
+        void* handle,
+        const std::vector<std::uint8_t>& bytes,
+        const std::wstring& extension = L".esp")
     {
-        TemporaryFile file;
+        TemporaryFile file(extension);
         file.Write(bytes);
         return api.Read(handle, file.Path().c_str());
     }
@@ -349,6 +423,103 @@ namespace EspReaderTests
     TEST_CLASS(EspReaderParserTests)
     {
     public:
+        TEST_METHOD(LoadsDocumentedUtf8AndLocalizedFixtures)
+        {
+            EspApi api;
+            EspHandle handle(api);
+            const char* children[]{ "FULL" };
+            Assert::AreEqual(1, api.ConfigureFilter(handle, "BOOK", children, 1));
+
+            const std::vector<std::uint8_t> utf8Fixture =
+                ReadHexFixture(L"valid-roundtrip.esp.hex");
+            Assert::AreEqual(0, ReadFixture(api, handle, utf8Fixture));
+
+            int count = 0;
+            void** records = api.Search(handle, "BOOK", "FULL", &count);
+            Assert::AreEqual(1, count);
+            Assert::IsNotNull(records);
+            const void* utf8Subrecord = api.GetSubData(records[0], 0);
+            Assert::IsNotNull(utf8Subrecord);
+            const std::string expectedUtf8 =
+                "Gr\xC3\xBC\xC3\x9F" "e \xE6\x9D\xB1\xE4\xBA\xAC";
+            Assert::AreEqual(
+                expectedUtf8,
+                std::string(api.GetSubString(utf8Subrecord)));
+            Assert::IsFalse(api.IsLocalized(utf8Subrecord));
+            api.FreeResults(records, count);
+
+            const std::vector<std::uint8_t> localizedFixture =
+                ReadHexFixture(L"localized.esm.hex");
+            Assert::AreEqual(0, ReadFixture(api, handle, localizedFixture, L".esm"));
+
+            count = 0;
+            records = api.Search(handle, "BOOK", "FULL", &count);
+            Assert::AreEqual(1, count);
+            Assert::IsNotNull(records);
+            const void* localizedSubrecord = api.GetSubData(records[0], 0);
+            Assert::IsNotNull(localizedSubrecord);
+            Assert::IsTrue(api.IsLocalized(localizedSubrecord));
+            Assert::AreEqual<std::uint32_t>(0x12345678, api.GetStringId(localizedSubrecord));
+            api.FreeResults(records, count);
+        }
+
+        TEST_METHOD(RejectsDocumentedMalformedFixture)
+        {
+            EspApi api;
+            EspHandle handle(api);
+            Assert::AreEqual(
+                1,
+                ReadFixture(
+                    api,
+                    handle,
+                    ReadHexFixture(L"malformed-truncated.esp.hex")));
+        }
+
+        TEST_METHOD(ModifiesSavesAndParsesAgainWhilePreservingUnknownData)
+        {
+            EspApi api;
+            EspHandle handle(api);
+            TemporaryFile input;
+            TemporaryFile output;
+            const std::vector<std::uint8_t> fixture =
+                ReadHexFixture(L"valid-roundtrip.esp.hex");
+            input.Write(fixture);
+
+            const char* children[]{ "FULL" };
+            Assert::AreEqual(1, api.ConfigureFilter(handle, "BOOK", children, 1));
+            Assert::AreEqual(0, api.Read(handle, input.Path().c_str()));
+            const std::string replacement =
+                "Neu: Gr\xC3\xBC\xC3\x9F" "e \xE6\x9D\xB1\xE4\xBA\xAC";
+            Assert::IsTrue(api.Modify(
+                handle,
+                0x01000001,
+                "BOOK",
+                "FULL",
+                0,
+                0,
+                replacement.c_str()));
+            Assert::IsTrue(api.Save(handle, output.Path().u8string().c_str()));
+
+            const std::vector<std::uint8_t> outputBytes = output.Read();
+            const std::vector<std::uint8_t> unknownSubrecord{
+                'U', 'N', 'K', 'N', 0x06, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x7F
+            };
+            Assert::IsTrue(ContainsSequence(outputBytes, unknownSubrecord));
+
+            EspHandle reparsedHandle(api);
+            Assert::AreEqual(1, api.ConfigureFilter(reparsedHandle, "BOOK", children, 1));
+            Assert::AreEqual(0, api.Read(reparsedHandle, output.Path().c_str()));
+
+            int count = 0;
+            void** records = api.Search(reparsedHandle, "BOOK", "FULL", &count);
+            Assert::AreEqual(1, count);
+            Assert::IsNotNull(records);
+            const void* subrecord = api.GetSubData(records[0], 0);
+            Assert::IsNotNull(subrecord);
+            Assert::AreEqual(std::string(replacement), std::string(api.GetSubString(subrecord)));
+            api.FreeResults(records, count);
+        }
+
         TEST_METHOD(LoadsAndExtractsUncompressedAndCompressedRecords)
         {
             EspApi api;

@@ -84,11 +84,30 @@
     <ClCompile Include="EspReaderParserTests.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Fixtures\README.md" />
+    <Content Include="Fixtures\localized.esm.hex">
+      <DeploymentContent>true</DeploymentContent>
+    </Content>
+    <Content Include="Fixtures\malformed-truncated.esp.hex">
+      <DeploymentContent>true</DeploymentContent>
+    </Content>
+    <Content Include="Fixtures\valid-roundtrip.esp.hex">
+      <DeploymentContent>true</DeploymentContent>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\EspReader\EspReader.vcxproj">
       <Project>{28496f8a-99fc-4ff2-9050-72ac9ab5af46}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyParserFixtures" AfterTargets="Build">
+    <ItemGroup>
+      <ParserFixture Include="$(ProjectDir)Fixtures\*.hex" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)Fixtures" />
+    <Copy SourceFiles="@(ParserFixture)" DestinationFolder="$(OutDir)Fixtures" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets" />
 </Project>

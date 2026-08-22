@@ -98,7 +98,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.0.0.2";
+static const std::string Version = "1.0.0.3";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)

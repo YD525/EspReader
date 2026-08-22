@@ -1,0 +1,35 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Restore miniz
+        shell: pwsh
+        run: .\scripts\Restore-Miniz.ps1
+
+      - name: Build x64 release
+        shell: pwsh
+        run: msbuild .\EspReader.sln /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Run parser regression tests
+        shell: pwsh
+        run: .\scripts\Run-Tests.ps1 -Configuration Release -Platform x64
