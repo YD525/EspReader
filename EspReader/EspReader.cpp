@@ -10,15 +10,14 @@
 #include <random>
 #include <mutex>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#define SSELex_API __declspec(dllexport)
-
-
+#include "EspReaderApi.h"
 #include "EspRecord.cpp"
 #include "EspBinaryReader.h"
 
@@ -94,7 +93,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.0.0.4";
+static const std::string Version = "1.0.0.5";
 
 // ============================================================
 //  Forward declarations (parsing helpers – unchanged logic)
@@ -412,6 +411,7 @@ static void FlushDeferredInfoLinks_Inst(EspInstance* inst)
 // ============================================================
 static void EnsureCharacterCache(EspInstance* inst)
 {
+    if (!inst) return;
     if (!inst->CharacterCacheDirty) return;
     inst->CharacterIndexCache.clear();
     if (!inst->CharTracker) return;
@@ -422,6 +422,7 @@ static void EnsureCharacterCache(EspInstance* inst)
 
 static const CharacterRecord* GetCharacterAt(EspInstance* inst, int index)
 {
+    if (!inst) return nullptr;
     EnsureCharacterCache(inst);
     if (index < 0 || index >= static_cast<int>(inst->CharacterIndexCache.size())) return nullptr;
     return inst->CharacterIndexCache[index];
@@ -802,134 +803,26 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
     }
 }
 
-// ============================================================
-//  Exported C API  –  every function takes handle as first arg
-// ============================================================
+// ABI adapters below are the only functions exported by the module.
 
-// --- New dialogue context structures (lean, for C#) ---
-struct C_DialResponseNode
+static EspInstance* CreateInstanceImpl()
 {
-    uint32_t ResponseID;
-    uint32_t EmotionType;
-    int RecordOffset;
-    int SubOffset;
-};
-
-struct C_LinkDIAL
-{
-    int HasData;
-    C_DialResponseNode Head;
-    C_DialResponseNode* Links;
-    uint32_t LinkCount;
-};
-
-extern "C"
-{
-    // ── Lifecycle ────────────────────────────────────────────
-    SSELex_API EspInstance* C_CreateInstance();
-    SSELex_API void         C_DestroyInstance(EspInstance* handle);
-
-    // ── Version ──────────────────────────────────────────────
-    SSELex_API const char* C_GetVersion();
-    SSELex_API int          C_GetVersionLength();
-
-    // ── Filter ───────────────────────────────────────────────
-    SSELex_API void C_InitFilter(EspInstance* handle);
-    SSELex_API int  C_SetSkyrimFilter(EspInstance* handle);
-    SSELex_API int  C_GetFilter(EspInstance* handle, uint8_t* buffer, int bufferSize);
-    SSELex_API int  C_SetFilter(EspInstance* handle, const char* parentSig, const char** childSigs, int childCount);
-    SSELex_API void C_ClearFilter(EspInstance* handle);
-
-    // ── IO ───────────────────────────────────────────────────
-    SSELex_API int          C_ReadEsp(EspInstance* handle, const wchar_t* EspPath);
-    SSELex_API bool         C_SaveEsp(EspInstance* handle, const char* Utf8Path);
-    SSELex_API void         C_Clear(EspInstance* handle);
-
-    // ── Field report ─────────────────────────────────────────
-    SSELex_API const char* C_GetFieldReport(EspInstance* handle);
-    SSELex_API int          C_GetFieldReportLength(EspInstance* handle);
-
-    // ── Search ───────────────────────────────────────────────
-    SSELex_API EspRecord** C_SearchBySig(EspInstance* handle, const char* ParentSig, const char* ChildSig, int* OutCount);
-    SSELex_API void         FreeSearchResults(EspRecord** Arr, int Count);
-
-    // ── Record accessors (record handle not instance) ────────
-    SSELex_API int          C_GetRecordSig(EspRecord* record, uint8_t* buffer, int bufferSize);
-    SSELex_API uint32_t     C_GetRecordFormID(EspRecord* record);
-    SSELex_API const char* C_GetRecordEditorID(EspRecord* record);
-    SSELex_API uint32_t     C_GetRecordFlags(EspRecord* record);
-    SSELex_API int          C_GetRecordIndex(EspRecord* record);
-    SSELex_API int          C_GetSubRecordCount(EspRecord* record);
-
-    // ── SubRecord accessors ──────────────────────────────────
-    SSELex_API const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* record, int index);
-    SSELex_API int          C_SubRecordData_GetOccurrenceIndex(const SubRecordData* sub);
-    SSELex_API int          C_SubRecordData_GetIndex(const SubRecordData* sub);
-    SSELex_API const char* C_SubRecordData_GetSig(const SubRecordData* sub);
-    SSELex_API const char* C_SubRecordData_GetString(const SubRecordData* sub);
-    SSELex_API bool         C_SubRecordData_IsLocalized(const SubRecordData* sub);
-    SSELex_API uint32_t     C_SubRecordData_GetStringID(const SubRecordData* sub);
-    SSELex_API int          C_SubRecordData_GetDataSize(const SubRecordData* sub);
-    SSELex_API bool         C_SubRecordData_GetData(const SubRecordData* sub, uint8_t* buffer, int bufferSize);
-    SSELex_API int          C_SubRecordData_GetStringUtf8(const SubRecordData* sub, uint8_t* buffer, int bufferSize);
-    SSELex_API int          C_SubRecordData_GetSigUtf8(const SubRecordData* sub, uint8_t* buffer, int bufferSize);
-
-    // ── Modify ───────────────────────────────────────────────
-    SSELex_API bool C_ModifySubRecordByOffset(EspInstance* handle, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data);
-    SSELex_API bool C_ModifySubRecord(EspInstance* handle, uint32_t FormID, const char* RecordSig, const char* SubSig, int OccurrenceIndex, int GlobalIndex, const char* NewUtf8Data);
-
-    // ── Character tracker ────────────────────────────────────
-    SSELex_API void     C_ClearCharacterTracker(EspInstance* handle);
-    SSELex_API int      C_GetCharacterCount(EspInstance* handle);
-    SSELex_API uint32_t C_GetCharacterFormID(EspInstance* handle, int Index);
-    SSELex_API int      C_GetCharacterName(EspInstance* handle, int Index, uint8_t* Buffer, int BufferSize);
-    SSELex_API int      C_GetCharacterEditorID(EspInstance* handle, int Index, uint8_t* Buffer, int BufferSize);
-    SSELex_API int      C_GetCharacterVoiceType(EspInstance* handle, int Index, uint8_t* Buffer, int BufferSize);
-    SSELex_API int      C_GetCharacterGender(EspInstance* handle, int Index);
-    SSELex_API int      C_GetCharacterLinkedInfoCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedInfo(EspInstance* handle, int Index, int LinkIndex);
-    SSELex_API int      C_GetCharacterLinkedFactionCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedFaction(EspInstance* handle, int Index, int LinkIndex);
-    SSELex_API int      C_GetCharacterLinkedRaceCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedRace(EspInstance* handle, int Index, int LinkIndex);
-    SSELex_API int      C_GetCharacterLinkedVoiceTypeCount(EspInstance* handle, int Index);
-    SSELex_API uint32_t C_GetCharacterLinkedVoiceType(EspInstance* handle, int Index, int LinkIndex);
-
-    // ── Dialogue context (new, based on offsets) ──────────────
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int SubOffset);
-    SSELex_API C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset);
-    SSELex_API void       __stdcall C_FreeDialContext(C_LinkDIAL* context);
-
-    SSELex_API int C_GetTitleIndexByBookDesc(EspInstance* Handle, int RecordOffset, int DescSubOffset);
-    SSELex_API int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset);
+    return new EspInstance();
 }
+static void DestroyInstanceImpl(EspInstance* h) { delete h; }
 
-// ── Implementation ────────────────────────────────────────────
+static const char* GetVersionImpl() { return Version.c_str(); }
+static int GetVersionLengthImpl() { return static_cast<int>(Version.length()); }
 
-EspInstance* C_CreateInstance()
-{
-    try
-    {
-        return new EspInstance();
-    }
-    catch (...)
-    {
-        return nullptr;
-    }
-}
-void         C_DestroyInstance(EspInstance* h) { delete h; }
-
-const char* C_GetVersion() { return Version.c_str(); }
-int          C_GetVersionLength() { return static_cast<int>(Version.length()); }
-
-void C_InitFilter(EspInstance* h)
+static void InitFilterImpl(EspInstance* h)
 {
     if (!h) return;
+    auto replacement = std::make_unique<RecordFilter>();
     delete h->Filter;
-    h->Filter = new RecordFilter();
+    h->Filter = replacement.release();
 }
 
-int C_GetFilter(EspInstance* h, uint8_t* buffer, int bufferSize)
+static int GetFilterImpl(EspInstance* h, uint8_t* buffer, int bufferSize)
 {
     if (!h || !h->Filter) return -1;
     std::string result;
@@ -952,7 +845,7 @@ int C_GetFilter(EspInstance* h, uint8_t* buffer, int bufferSize)
     return len;
 }
 
-int C_SetSkyrimFilter(EspInstance* h)
+static int SetSkyrimFilterImpl(EspInstance* h)
 {
     if (!h || !h->Filter) return -1;
     std::unordered_map<std::string, std::vector<std::string>> Config =
@@ -975,7 +868,7 @@ int C_SetSkyrimFilter(EspInstance* h)
     return static_cast<int>(h->Filter->CurrentConfig.size());
 }
 
-int C_SetFilter(EspInstance* h, const char* ParentSig, const char** ChildSigs, int ChildCount)
+static int SetFilterImpl(EspInstance* h, const char* ParentSig, const char** ChildSigs, int ChildCount)
 {
     if (!h || !h->Filter || !ParentSig) return -1;
     std::string Parent(ParentSig);
@@ -987,7 +880,7 @@ int C_SetFilter(EspInstance* h, const char* ParentSig, const char** ChildSigs, i
     return static_cast<int>(Vec.size());
 }
 
-void C_ClearFilter(EspInstance* Handle)
+static void ClearFilterImpl(EspInstance* Handle)
 {
     if (Handle && Handle->Filter)
     {
@@ -996,12 +889,12 @@ void C_ClearFilter(EspInstance* Handle)
 }
 
 
-C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffset)
+static C_LinkDIAL GetDialContextByDialImpl(EspInstance* handle, int RecordOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByDialIndex(RecordOffset);
+    std::unique_ptr<LinkDIAL> context(handle->Data->GetDialContextByDialIndex(RecordOffset));
     if (!context) return result;
 
     result.HasData = 1;
@@ -1013,7 +906,7 @@ C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffse
     result.LinkCount = (uint32_t)context->Links.size();
     if (result.LinkCount > 0)
     {
-        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount];
+        auto linkArray = std::make_unique<C_DialResponseNode[]>(result.LinkCount);
         for (uint32_t i = 0; i < result.LinkCount; ++i)
         {
             linkArray[i].ResponseID = context->Links[i].ResponseID;
@@ -1021,21 +914,20 @@ C_LinkDIAL __stdcall C_GetDialContextByDial(EspInstance* handle, int RecordOffse
             linkArray[i].RecordOffset = context->Links[i].RecordOffset;
             linkArray[i].SubOffset = context->Links[i].SubOffset;
         }
-        result.Links = linkArray;
+        result.Links = linkArray.release();
     }
 
-    delete context;
     return result;
 }
 
 // --- New dialogue context API ---
 
-C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int SubOffset)
+static C_LinkDIAL GetDialContextImpl(EspInstance* handle, int RecordOffset, int SubOffset)
 {
     C_LinkDIAL result = {};
     if (!handle || !handle->Data) return result;
 
-    LinkDIAL* context = handle->Data->GetDialContextByIndex(RecordOffset, SubOffset);
+    std::unique_ptr<LinkDIAL> context(handle->Data->GetDialContextByIndex(RecordOffset, SubOffset));
     if (!context) return result;
 
     result.HasData = 1;
@@ -1049,7 +941,7 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int
     result.LinkCount = static_cast<uint32_t>(context->Links.size());
     if (result.LinkCount > 0)
     {
-        C_DialResponseNode* linkArray = new C_DialResponseNode[result.LinkCount];
+        auto linkArray = std::make_unique<C_DialResponseNode[]>(result.LinkCount);
         for (size_t i = 0; i < result.LinkCount; ++i)
         {
             linkArray[i].ResponseID = context->Links[i].ResponseID;
@@ -1057,14 +949,13 @@ C_LinkDIAL __stdcall C_GetDialContext(EspInstance* handle, int RecordOffset, int
             linkArray[i].RecordOffset = context->Links[i].RecordOffset;
             linkArray[i].SubOffset = context->Links[i].SubOffset;
         }
-        result.Links = linkArray;
+        result.Links = linkArray.release();
     }
 
-    delete context;
     return result;
 }
 
-void __stdcall C_FreeDialContext(C_LinkDIAL* context)
+static void FreeDialContextImpl(C_LinkDIAL* context)
 {
     if (!context) return;
 
@@ -1074,13 +965,13 @@ void __stdcall C_FreeDialContext(C_LinkDIAL* context)
     context->HasData = 0;
 }
 
-int C_GetTitleIndexByBookDesc(EspInstance* Handle, int RecordOffset, int DescSubOffset)
+static int GetTitleIndexByBookDescImpl(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
     if (!Handle || !Handle->Data) return -1;
     return Handle->Data->GetTitleIndexByBookDesc(RecordOffset, DescSubOffset);
 }
 
-int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSubOffset)
+static int GetDescIndexByBookTitleImpl(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
     if (!Handle || !Handle->Data) return -1;
     return Handle->Data->GetDescIndexByBookTitle(RecordOffset, DescSubOffset);
@@ -1088,7 +979,7 @@ int C_GetDescIndexByBookTitle(EspInstance* Handle, int RecordOffset, int DescSub
 
 // --- Other C API functions (unchanged) ---
 
-int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
+static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
 {
     if (!Instance || !EspPath) return -1;
 
@@ -1133,37 +1024,49 @@ int C_ReadEsp(EspInstance* Instance, const wchar_t* EspPath)
     }
 }
 
-bool C_SaveEsp(EspInstance* h, const char* Utf8Path)
+static bool SaveEspImpl(EspInstance* h, const char* Utf8Path)
 {
     return SaveEsp_Inst(h, Utf8Path);
 }
 
-void C_Clear(EspInstance* h) { if (h) h->ClearData(); }
+static void ClearImpl(EspInstance* h) { if (h) h->ClearData(); }
 
-const char* C_GetFieldReport(EspInstance* h)
+static const char* GetFieldReportImpl(EspInstance* h)
 {
     if (!h || !h->TextValidator) { static const char* e = "Validator not initialized"; return e; }
-    static std::string buf; buf = h->TextValidator->ExportFieldReport(); return buf.c_str();
+    thread_local std::string buffer;
+    buffer = h->TextValidator->ExportFieldReport();
+    return buffer.c_str();
 }
-int C_GetFieldReportLength(EspInstance* h)
+static int GetFieldReportLengthImpl(EspInstance* h)
 {
     if (!h || !h->TextValidator) return 0;
-    static std::string buf; buf = h->TextValidator->ExportFieldReport(); return static_cast<int>(buf.length());
+    thread_local std::string buffer;
+    buffer = h->TextValidator->ExportFieldReport();
+    return static_cast<int>(buffer.length());
 }
 
-EspRecord** C_SearchBySig(EspInstance* h, const char* ParentSig, const char* ChildSig, int* OutCount)
+static EspRecord** SearchBySigImpl(EspInstance* h, const char* ParentSig, const char* ChildSig, int* OutCount)
 {
     *OutCount = 0;
     if (!h || !h->Data) return nullptr;
     std::vector<EspRecord> Matches = h->Data->SearchBySig(ParentSig, ChildSig ? ChildSig : "");
     *OutCount = static_cast<int>(Matches.size());
     if (Matches.empty()) return nullptr;
-    EspRecord** Result = new EspRecord * [*OutCount];
-    for (int i = 0; i < *OutCount; ++i) Result[i] = new EspRecord(Matches[i]);
-    return Result;
+    auto result = std::make_unique<EspRecord*[]>(static_cast<std::size_t>(*OutCount));
+    std::vector<std::unique_ptr<EspRecord>> records;
+    records.reserve(static_cast<std::size_t>(*OutCount));
+    for (int i = 0; i < *OutCount; ++i)
+    {
+        records.push_back(std::make_unique<EspRecord>(Matches[static_cast<std::size_t>(i)]));
+        result[static_cast<std::size_t>(i)] = records.back().get();
+    }
+    for (auto& record : records)
+        record.release();
+    return result.release();
 }
 
-void FreeSearchResults(EspRecord** Arr, int Count)
+static void FreeSearchResultsImpl(EspRecord** Arr, int Count)
 {
     if (!Arr) return;
     for (int i = 0; i < Count; ++i) delete Arr[i];
@@ -1171,46 +1074,58 @@ void FreeSearchResults(EspRecord** Arr, int Count)
 }
 
 // Record accessors (unchanged)
-const SubRecordData* C_GetSubRecordData_Ptr(EspRecord* r, int i)
+static const SubRecordData* GetSubRecordDataPtrImpl(EspRecord* r, int i)
 {
     if (!r || i < 0 || i >= (int)r->SubRecords.size()) return nullptr; return &r->SubRecords[i];
 }
-int C_GetRecordSig(EspRecord* r, uint8_t* b, int bs)
+static int GetRecordSigImpl(EspRecord* r, uint8_t* b, int bs)
 {
     if (!r) return -1; int l = (int)r->Sig.size();
     if (b && bs > l) { std::memcpy(b, r->Sig.c_str(), l); b[l] = 0; } return l;
 }
-uint32_t    C_GetRecordFormID(EspRecord* r) { return r ? r->FormID : 0; }
-const char* C_GetRecordEditorID(EspRecord* r) { if (!r) return nullptr; static std::string buf; buf = r->EditorID; return buf.c_str(); }
-uint32_t    C_GetRecordFlags(EspRecord* r) { return r ? r->Flags : 0; }
-int         C_GetRecordIndex(EspRecord* r) { return r ? r->Index : 0; }
-int         C_GetSubRecordCount(EspRecord* r) { return r ? (int)r->SubRecords.size() : 0; }
+static uint32_t GetRecordFormIdImpl(EspRecord* r) { return r ? r->FormID : 0; }
+static const char* GetRecordEditorIdImpl(EspRecord* r)
+{
+    if (!r) return nullptr;
+    thread_local std::string buffer;
+    buffer = r->EditorID;
+    return buffer.c_str();
+}
+static uint32_t GetRecordFlagsImpl(EspRecord* r) { return r ? r->Flags : 0; }
+static int GetRecordIndexImpl(EspRecord* r) { return r ? r->Index : 0; }
+static int GetSubRecordCountImpl(EspRecord* r) { return r ? (int)r->SubRecords.size() : 0; }
 
-int         C_SubRecordData_GetOccurrenceIndex(const SubRecordData* s) { return s ? s->OccurrenceIndex : -1; }
-int         C_SubRecordData_GetIndex(const SubRecordData* s) { return s ? s->Index : -1; }
-const char* C_SubRecordData_GetSig(const SubRecordData* s) { return s ? s->Sig.c_str() : nullptr; }
-const char* C_SubRecordData_GetString(const SubRecordData* s) { if (!s) return nullptr; static std::string buf; buf = s->GetString(); return buf.c_str(); }
-bool        C_SubRecordData_IsLocalized(const SubRecordData* s) { return s ? s->IsLocalized : false; }
-uint32_t    C_SubRecordData_GetStringID(const SubRecordData* s) { return s ? s->StringID : 0; }
-int         C_SubRecordData_GetDataSize(const SubRecordData* s) { return s ? (int)s->Data.size() : 0; }
-bool        C_SubRecordData_GetData(const SubRecordData* s, uint8_t* b, int bs)
+static int GetSubRecordOccurrenceIndexImpl(const SubRecordData* s) { return s ? s->OccurrenceIndex : -1; }
+static int GetSubRecordIndexImpl(const SubRecordData* s) { return s ? s->Index : -1; }
+static const char* GetSubRecordSigImpl(const SubRecordData* s) { return s ? s->Sig.c_str() : nullptr; }
+static const char* GetSubRecordStringImpl(const SubRecordData* s)
+{
+    if (!s) return nullptr;
+    thread_local std::string buffer;
+    buffer = s->GetString();
+    return buffer.c_str();
+}
+static bool IsSubRecordLocalizedImpl(const SubRecordData* s) { return s ? s->IsLocalized : false; }
+static uint32_t GetSubRecordStringIdImpl(const SubRecordData* s) { return s ? s->StringID : 0; }
+static int GetSubRecordDataSizeImpl(const SubRecordData* s) { return s ? (int)s->Data.size() : 0; }
+static bool GetSubRecordDataImpl(const SubRecordData* s, uint8_t* b, int bs)
 {
     if (!s || !b) return false; if (bs < (int)s->Data.size()) return false;
     std::memcpy(b, s->Data.data(), s->Data.size()); return true;
 }
-int C_SubRecordData_GetStringUtf8(const SubRecordData* s, uint8_t* b, int bs)
+static int GetSubRecordStringUtf8Impl(const SubRecordData* s, uint8_t* b, int bs)
 {
     if (!s) return -1; std::string str = s->GetString(); int l = (int)strlen(str.c_str());
     if (b && bs > l) std::memcpy(b, str.c_str(), l + 1); return l;
 }
-int C_SubRecordData_GetSigUtf8(const SubRecordData* s, uint8_t* b, int bs)
+static int GetSubRecordSigUtf8Impl(const SubRecordData* s, uint8_t* b, int bs)
 {
     if (!s) return -1; int l = (int)s->Sig.size();
     if (b && bs > l) { std::memcpy(b, s->Sig.c_str(), l); b[l] = 0; } return l;
 }
 
 // Modify
-bool C_ModifySubRecordByOffset(EspInstance* h, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
+static bool ModifySubRecordByOffsetImpl(EspInstance* h, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
 {
     if (!h || !h->Data) return false;
     std::vector<EspRecord>& Records = (IsCell == 1) ? h->Data->CellRecords : h->Data->Records;
@@ -1230,7 +1145,7 @@ bool C_ModifySubRecordByOffset(EspInstance* h, int IsCell, int RecordOffset, int
     return true;
 }
 
-bool C_ModifySubRecord(EspInstance* h, uint32_t FormID, const char* RecordSig, const char* SubSig,
+static bool ModifySubRecordImpl(EspInstance* h, uint32_t FormID, const char* RecordSig, const char* SubSig,
     int OccurrenceIndex, int Index, const char* NewUtf8Data)
 {
     if (!h || !h->Data) return false;
@@ -1258,30 +1173,490 @@ bool C_ModifySubRecord(EspInstance* h, uint32_t FormID, const char* RecordSig, c
 }
 
 // Character tracker
-void C_ClearCharacterTracker(EspInstance* h)
+static void ClearCharacterTrackerImpl(EspInstance* h)
 {
     if (!h) return;
     if (h->CharTracker) h->CharTracker->ClearAll();
     h->CharacterIndexCache.clear();
     h->CharacterCacheDirty = true;
 }
-int      C_GetCharacterCount(EspInstance* h) { EnsureCharacterCache(h); return (int)h->CharacterIndexCache.size(); }
-uint32_t C_GetCharacterFormID(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? r->NpcFormID : 0; }
-int      C_GetCharacterName(EspInstance* h, int i, uint8_t* b, int bs) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return -1; return WriteStringToBuffer(r->Name, b, bs); }
-int      C_GetCharacterEditorID(EspInstance* h, int i, uint8_t* b, int bs) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return -1; return WriteStringToBuffer(r->EditorID, b, bs); }
-int      C_GetCharacterVoiceType(EspInstance* h, int i, uint8_t* b, int bs) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return -1; return WriteStringToBuffer(r->VoiceType, b, bs); }
-int      C_GetCharacterGender(EspInstance* h, int i) {
+static int GetCharacterCountImpl(EspInstance* h) { EnsureCharacterCache(h); return (int)h->CharacterIndexCache.size(); }
+static uint32_t GetCharacterFormIdImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? record->NpcFormID : 0;
+}
+
+static int GetCharacterNameImpl(EspInstance* h, int i, uint8_t* b, int bs)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? WriteStringToBuffer(record->Name, b, bs) : -1;
+}
+
+static int GetCharacterEditorIdImpl(EspInstance* h, int i, uint8_t* b, int bs)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? WriteStringToBuffer(record->EditorID, b, bs) : -1;
+}
+
+static int GetCharacterVoiceTypeImpl(EspInstance* h, int i, uint8_t* b, int bs)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? WriteStringToBuffer(record->VoiceType, b, bs) : -1;
+}
+static int GetCharacterGenderImpl(EspInstance* h, int i) {
     const CharacterRecord* r = GetCharacterAt(h, i); if (!r) return 0;
     switch (r->Gender) { case CharacterGender::Male: return 1; case CharacterGender::Female: return 2; default: return 0; }
 }
-int      C_GetCharacterLinkedInfoCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedInfos.size() : 0; }
-uint32_t C_GetCharacterLinkedInfo(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedInfos.size()) return 0; return r->LinkedInfos[li]; }
-int      C_GetCharacterLinkedFactionCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedFactions.size() : 0; }
-uint32_t C_GetCharacterLinkedFaction(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedFactions.size()) return 0; return r->LinkedFactions[li]; }
-int      C_GetCharacterLinkedRaceCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedRaces.size() : 0; }
-uint32_t C_GetCharacterLinkedRace(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedRaces.size()) return 0; return r->LinkedRaces[li]; }
-int      C_GetCharacterLinkedVoiceTypeCount(EspInstance* h, int i) { const CharacterRecord* r = GetCharacterAt(h, i); return r ? (int)r->LinkedVoiceTypes.size() : 0; }
-uint32_t C_GetCharacterLinkedVoiceType(EspInstance* h, int i, int li) { const CharacterRecord* r = GetCharacterAt(h, i); if (!r || li < 0 || li >= (int)r->LinkedVoiceTypes.size()) return 0; return r->LinkedVoiceTypes[li]; }
+static int GetCharacterLinkedInfoCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedInfos.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedInfoImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedInfos.size())) return 0;
+    return record->LinkedInfos[static_cast<std::size_t>(li)];
+}
+
+static int GetCharacterLinkedFactionCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedFactions.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedFactionImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedFactions.size())) return 0;
+    return record->LinkedFactions[static_cast<std::size_t>(li)];
+}
+
+static int GetCharacterLinkedRaceCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedRaces.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedRaceImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedRaces.size())) return 0;
+    return record->LinkedRaces[static_cast<std::size_t>(li)];
+}
+
+static int GetCharacterLinkedVoiceTypeCountImpl(EspInstance* h, int i)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    return record ? static_cast<int>(record->LinkedVoiceTypes.size()) : 0;
+}
+
+static uint32_t GetCharacterLinkedVoiceTypeImpl(EspInstance* h, int i, int li)
+{
+    const CharacterRecord* record = GetCharacterAt(h, i);
+    if (!record || li < 0 || li >= static_cast<int>(record->LinkedVoiceTypes.size())) return 0;
+    return record->LinkedVoiceTypes[static_cast<std::size_t>(li)];
+}
+
+namespace
+{
+    struct AbiErrorState
+    {
+        EspReaderStatus Status = ESP_READER_STATUS_OK;
+        char Message[256]{};
+    };
+
+    thread_local AbiErrorState LastAbiError;
+
+    void ClearAbiError() noexcept
+    {
+        LastAbiError.Status = ESP_READER_STATUS_OK;
+        LastAbiError.Message[0] = '\0';
+    }
+
+    void SetAbiError(EspReaderStatus status, const char* message) noexcept
+    {
+        LastAbiError.Status = status;
+        const std::size_t length = (std::min)(std::strlen(message), sizeof(LastAbiError.Message) - 1);
+        std::memcpy(LastAbiError.Message, message, length);
+        LastAbiError.Message[length] = '\0';
+    }
+
+    void CaptureAbiException() noexcept
+    {
+        try
+        {
+            throw;
+        }
+        catch (const std::bad_alloc&)
+        {
+            SetAbiError(ESP_READER_STATUS_OUT_OF_MEMORY, "EspReader could not allocate required memory.");
+        }
+        catch (const std::invalid_argument&)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "EspReader rejected an invalid argument.");
+        }
+        catch (const std::out_of_range&)
+        {
+            SetAbiError(ESP_READER_STATUS_OUT_OF_RANGE, "EspReader rejected an out-of-range value.");
+        }
+        catch (const std::ios_base::failure&)
+        {
+            SetAbiError(ESP_READER_STATUS_IO_ERROR, "EspReader encountered an input or output error.");
+        }
+        catch (const std::exception&)
+        {
+            SetAbiError(ESP_READER_STATUS_INTERNAL_ERROR, "EspReader encountered an internal error.");
+        }
+        catch (...)
+        {
+            SetAbiError(ESP_READER_STATUS_INTERNAL_ERROR, "EspReader encountered an unknown internal error.");
+        }
+    }
+
+    template<typename TResult, typename TAction>
+    TResult InvokeAbi(TResult failureValue, TAction&& action) noexcept
+    {
+        try
+        {
+            ClearAbiError();
+            return action();
+        }
+        catch (...)
+        {
+            CaptureAbiException();
+            return failureValue;
+        }
+    }
+
+    template<typename TAction>
+    void InvokeAbi(TAction&& action) noexcept
+    {
+        try
+        {
+            ClearAbiError();
+            action();
+        }
+        catch (...)
+        {
+            CaptureAbiException();
+        }
+    }
+}
+
+uint32_t ESP_READER_CALL C_GetAbiVersion(void) noexcept
+{
+    return ESP_READER_ABI_VERSION;
+}
+
+EspReaderStatus ESP_READER_CALL C_GetLastStatus(void) noexcept
+{
+    return LastAbiError.Status;
+}
+
+int32_t ESP_READER_CALL C_GetLastErrorUtf8(uint8_t* buffer, int32_t bufferSize) noexcept
+{
+    const std::size_t length = std::strlen(LastAbiError.Message);
+    if (length > static_cast<std::size_t>((std::numeric_limits<int32_t>::max)()))
+        return -1;
+    if (buffer != nullptr && bufferSize > static_cast<int32_t>(length))
+        std::memcpy(buffer, LastAbiError.Message, length + 1);
+    return static_cast<int32_t>(length);
+}
+
+#define ESP_READER_WRAP_CDECL(returnType, name, implementation, failureValue, parameters, arguments) \
+    returnType ESP_READER_CALL name parameters noexcept \
+    { \
+        return InvokeAbi<returnType>(failureValue, [&]() -> returnType { return implementation arguments; }); \
+    }
+
+#define ESP_READER_WRAP_STDCALL(returnType, name, implementation, failureValue, parameters, arguments) \
+    returnType ESP_READER_DIALOG_CALL name parameters noexcept \
+    { \
+        return InvokeAbi<returnType>(failureValue, [&]() -> returnType { return implementation arguments; }); \
+    }
+
+#define ESP_READER_WRAP_VOID_CDECL(name, implementation, parameters, arguments) \
+    void ESP_READER_CALL name parameters noexcept \
+    { \
+        InvokeAbi([&]() { implementation arguments; }); \
+    }
+
+#define ESP_READER_WRAP_VOID_STDCALL(name, implementation, parameters, arguments) \
+    void ESP_READER_DIALOG_CALL name parameters noexcept \
+    { \
+        InvokeAbi([&]() { implementation arguments; }); \
+    }
+
+ESP_READER_WRAP_CDECL(
+    EspInstance*, C_CreateInstance, CreateInstanceImpl, nullptr, (void), ())
+ESP_READER_WRAP_VOID_CDECL(
+    C_DestroyInstance, DestroyInstanceImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    const char*, C_GetVersion, GetVersionImpl, nullptr, (void), ())
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetVersionLength, GetVersionLengthImpl, -1, (void), ())
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SetSkyrimFilter, SetSkyrimFilterImpl, -1, (EspInstance* handle), (handle))
+ESP_READER_WRAP_VOID_CDECL(
+    C_ClearFilter, ClearFilterImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_VOID_CDECL(
+    C_Clear, ClearImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    const char*, C_GetFieldReport, GetFieldReportImpl, nullptr, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetFieldReportLength, GetFieldReportLengthImpl, -1, (EspInstance* handle), (handle))
+ESP_READER_WRAP_VOID_CDECL(
+    FreeSearchResults, FreeSearchResultsImpl, (EspRecord** records, int32_t count), (records, count))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetRecordSig, GetRecordSigImpl, -1,
+    (EspRecord* record, uint8_t* buffer, int32_t bufferSize), (record, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetRecordFormID, GetRecordFormIdImpl, 0, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    const char*, C_GetRecordEditorID, GetRecordEditorIdImpl, nullptr, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetRecordFlags, GetRecordFlagsImpl, 0, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetRecordIndex, GetRecordIndexImpl, -1, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetSubRecordCount, GetSubRecordCountImpl, -1, (EspRecord* record), (record))
+ESP_READER_WRAP_CDECL(
+    const SubRecordData*, C_GetSubRecordData_Ptr, GetSubRecordDataPtrImpl, nullptr,
+    (EspRecord* record, int32_t index), (record, index))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetOccurrenceIndex, GetSubRecordOccurrenceIndexImpl, -1,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetIndex, GetSubRecordIndexImpl, -1,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    const char*, C_SubRecordData_GetSig, GetSubRecordSigImpl, nullptr,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    const char*, C_SubRecordData_GetString, GetSubRecordStringImpl, nullptr,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_SubRecordData_IsLocalized, IsSubRecordLocalizedImpl, 0,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_SubRecordData_GetStringID, GetSubRecordStringIdImpl, 0,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetDataSize, GetSubRecordDataSizeImpl, -1,
+    (const SubRecordData* subRecord), (subRecord))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_SubRecordData_GetData, GetSubRecordDataImpl, 0,
+    (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
+    (subRecord, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetStringUtf8, GetSubRecordStringUtf8Impl, -1,
+    (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
+    (subRecord, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_SubRecordData_GetSigUtf8, GetSubRecordSigUtf8Impl, -1,
+    (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
+    (subRecord, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_ModifySubRecordByOffset, ModifySubRecordByOffsetImpl, 0,
+    (EspInstance* handle, int32_t isCell, int32_t recordOffset, int32_t subOffset, const char* newUtf8Data),
+    (handle, isCell, recordOffset, subOffset, newUtf8Data))
+ESP_READER_WRAP_CDECL(
+    EspReaderBool, C_ModifySubRecord, ModifySubRecordImpl, 0,
+    (EspInstance* handle, uint32_t formId, const char* recordSig, const char* subSig,
+        int32_t occurrenceIndex, int32_t globalIndex, const char* newUtf8Data),
+    (handle, formId, recordSig, subSig, occurrenceIndex, globalIndex, newUtf8Data))
+ESP_READER_WRAP_VOID_CDECL(
+    C_ClearCharacterTracker, ClearCharacterTrackerImpl, (EspInstance* handle), (handle))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterFormID, GetCharacterFormIdImpl, 0,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterName, GetCharacterNameImpl, -1,
+    (EspInstance* handle, int32_t index, uint8_t* buffer, int32_t bufferSize),
+    (handle, index, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterEditorID, GetCharacterEditorIdImpl, -1,
+    (EspInstance* handle, int32_t index, uint8_t* buffer, int32_t bufferSize),
+    (handle, index, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterVoiceType, GetCharacterVoiceTypeImpl, -1,
+    (EspInstance* handle, int32_t index, uint8_t* buffer, int32_t bufferSize),
+    (handle, index, buffer, bufferSize))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterGender, GetCharacterGenderImpl, 0,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedInfoCount, GetCharacterLinkedInfoCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedInfo, GetCharacterLinkedInfoImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedFactionCount, GetCharacterLinkedFactionCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedFaction, GetCharacterLinkedFactionImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedRaceCount, GetCharacterLinkedRaceCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedRace, GetCharacterLinkedRaceImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetCharacterLinkedVoiceTypeCount, GetCharacterLinkedVoiceTypeCountImpl, -1,
+    (EspInstance* handle, int32_t index), (handle, index))
+ESP_READER_WRAP_CDECL(
+    uint32_t, C_GetCharacterLinkedVoiceType, GetCharacterLinkedVoiceTypeImpl, 0,
+    (EspInstance* handle, int32_t index, int32_t linkIndex), (handle, index, linkIndex))
+ESP_READER_WRAP_STDCALL(
+    C_LinkDIAL, C_GetDialContext, GetDialContextImpl, C_LinkDIAL{},
+    (EspInstance* handle, int32_t recordOffset, int32_t subOffset),
+    (handle, recordOffset, subOffset))
+ESP_READER_WRAP_STDCALL(
+    C_LinkDIAL, C_GetDialContextByDial, GetDialContextByDialImpl, C_LinkDIAL{},
+    (EspInstance* handle, int32_t recordOffset), (handle, recordOffset))
+ESP_READER_WRAP_VOID_STDCALL(
+    C_FreeDialContext, FreeDialContextImpl, (C_LinkDIAL* context), (context))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetTitleIndexByBookDesc, GetTitleIndexByBookDescImpl, -1,
+    (EspInstance* handle, int32_t recordOffset, int32_t descSubOffset),
+    (handle, recordOffset, descSubOffset))
+ESP_READER_WRAP_CDECL(
+    int32_t, C_GetDescIndexByBookTitle, GetDescIndexByBookTitleImpl, -1,
+    (EspInstance* handle, int32_t recordOffset, int32_t descSubOffset),
+    (handle, recordOffset, descSubOffset))
+
+void ESP_READER_CALL C_InitFilter(EspInstance* handle) noexcept
+{
+    InvokeAbi([&]()
+    {
+        if (handle == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle is null.");
+            return;
+        }
+        InitFilterImpl(handle);
+    });
+}
+
+int32_t ESP_READER_CALL C_GetFilter(EspInstance* handle, uint8_t* buffer, int32_t bufferSize) noexcept
+{
+    return InvokeAbi<int32_t>(-1, [&]()
+    {
+        if (handle == nullptr || handle->Filter == nullptr || bufferSize < 0)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The filter request is invalid.");
+            return -1;
+        }
+        const int32_t length = GetFilterImpl(handle, buffer, bufferSize);
+        if (buffer != nullptr && bufferSize <= length)
+            SetAbiError(ESP_READER_STATUS_BUFFER_TOO_SMALL, "The filter buffer is too small.");
+        return length;
+    });
+}
+
+int32_t ESP_READER_CALL C_SetFilter(
+    EspInstance* handle,
+    const char* parentSig,
+    const char** childSigs,
+    int32_t childCount) noexcept
+{
+    return InvokeAbi<int32_t>(-1, [&]()
+    {
+        if (handle == nullptr || handle->Filter == nullptr || parentSig == nullptr || childCount < 0 ||
+            (childCount > 0 && childSigs == nullptr))
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The filter configuration is invalid.");
+            return -1;
+        }
+        for (int32_t index = 0; index < childCount; ++index)
+        {
+            if (childSigs[index] == nullptr)
+            {
+                SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "A child signature is null.");
+                return -1;
+            }
+        }
+        return SetFilterImpl(handle, parentSig, childSigs, childCount);
+    });
+}
+
+int32_t ESP_READER_CALL C_ReadEsp(EspInstance* handle, const wchar_t* espPath) noexcept
+{
+    return InvokeAbi<int32_t>(1, [&]()
+    {
+        if (handle == nullptr || espPath == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle or UTF-16 path is null.");
+            return -1;
+        }
+        const int32_t result = ReadEspImpl(handle, espPath);
+        if (result != 0)
+            SetAbiError(ESP_READER_STATUS_PARSE_ERROR, "The plugin could not be opened or parsed.");
+        return result;
+    });
+}
+
+EspReaderBool ESP_READER_CALL C_SaveEsp(EspInstance* handle, const char* utf8Path) noexcept
+{
+    return InvokeAbi<EspReaderBool>(0, [&]() -> EspReaderBool
+    {
+        if (handle == nullptr || utf8Path == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle or UTF-8 path is null.");
+            return 0;
+        }
+        const EspReaderBool result = SaveEspImpl(handle, utf8Path) ? 1 : 0;
+        if (result == 0)
+            SetAbiError(ESP_READER_STATUS_IO_ERROR, "The plugin could not be saved.");
+        return result;
+    });
+}
+
+EspRecord** ESP_READER_CALL C_SearchBySig(
+    EspInstance* handle,
+    const char* parentSig,
+    const char* childSig,
+    int32_t* outCount) noexcept
+{
+    return InvokeAbi<EspRecord**>(nullptr, [&]()
+    {
+        if (outCount == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The search count pointer is null.");
+            return static_cast<EspRecord**>(nullptr);
+        }
+        *outCount = 0;
+        if (handle == nullptr || parentSig == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The search handle or parent signature is null.");
+            return static_cast<EspRecord**>(nullptr);
+        }
+        return SearchBySigImpl(handle, parentSig, childSig, outCount);
+    });
+}
+
+int32_t ESP_READER_CALL C_GetCharacterCount(EspInstance* handle) noexcept
+{
+    return InvokeAbi<int32_t>(-1, [&]()
+    {
+        if (handle == nullptr)
+        {
+            SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle is null.");
+            return -1;
+        }
+        return GetCharacterCountImpl(handle);
+    });
+}
+
+#undef ESP_READER_WRAP_CDECL
+#undef ESP_READER_WRAP_STDCALL
+#undef ESP_READER_WRAP_VOID_CDECL
+#undef ESP_READER_WRAP_VOID_STDCALL
 
 BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
 

@@ -35,10 +35,20 @@ The parser suite runs non-interactively through the Visual Studio C++ test runne
 fixtures and their license status are documented in `EspReader.Tests/Fixtures/README.md`.
 The pull-request, native-analysis, warning, diagnostic-artifact, and sanitizer policy is documented in `docs/ci.md`.
 
+## Public C ABI
+
+`EspReader/EspReaderApi.h` is the canonical C and C++ contract. It defines fixed-width values, explicit cdecl and
+stdcall entry points, the dialogue structure packing, UTF-8 and UTF-16 string rules, byte-oriented buffer capacities,
+and ownership for handles and returned allocations. Existing exports remain available, while `C_GetAbiVersion`,
+`C_GetLastStatus`, and `C_GetLastErrorUtf8` provide additive version negotiation and a thread-local error contract.
+
+Consumers must release handles with `C_DestroyInstance`, search arrays with `FreeSearchResults`, and dialogue link
+arrays with `C_FreeDialContext`. Borrowed record, subrecord, and string pointers must not be freed by the caller.
+
 ## Releases
 
 Push a version tag matching `v*` to build the x64 library and create a GitHub Release. Each release contains
-`EspReader.dll` and `EspReader.dll.sha256`.
+`EspReader.dll`, `EspReaderApi.h`, and a SHA-256 checksum for each file.
 
 
 ## Contributors:

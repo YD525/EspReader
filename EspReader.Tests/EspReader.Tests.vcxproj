@@ -83,7 +83,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="EspReaderHeaderC.c">
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
     <ClCompile Include="EspReaderParserTests.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\EspReader\EspReaderApi.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures\README.md" />

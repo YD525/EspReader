@@ -3,17 +3,22 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+#include "../EspReader/EspReaderApi.h"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
@@ -294,19 +299,25 @@ namespace
     class EspApi
     {
     public:
-        using CreateInstance = void*(*)();
-        using DestroyInstance = void(*)(void*);
-        using SetFilter = int(*)(void*, const char*, const char**, int);
-        using ReadEsp = int(*)(void*, const wchar_t*);
-        using SaveEsp = bool(*)(void*, const char*);
-        using SearchBySig = void**(*)(void*, const char*, const char*, int*);
-        using FreeSearchResults = void(*)(void**, int);
-        using GetSubRecordCount = int(*)(void*);
-        using GetSubRecordData = const void*(*)(void*, int);
-        using GetSubRecordString = const char*(*)(const void*);
-        using IsSubRecordLocalized = bool(*)(const void*);
-        using GetSubRecordStringId = std::uint32_t(*)(const void*);
-        using ModifySubRecord = bool(*)(
+        using GetAbiVersion = std::uint32_t(ESP_READER_CALL*)();
+        using GetLastStatus = EspReaderStatus(ESP_READER_CALL*)();
+        using GetLastErrorUtf8 = std::int32_t(ESP_READER_CALL*)(std::uint8_t*, std::int32_t);
+        using GetVersion = const char*(ESP_READER_CALL*)();
+        using GetVersionLength = std::int32_t(ESP_READER_CALL*)();
+        using CreateInstance = void*(ESP_READER_CALL*)();
+        using DestroyInstance = void(ESP_READER_CALL*)(void*);
+        using SetFilter = int(ESP_READER_CALL*)(void*, const char*, const char**, int);
+        using GetFilter = int(ESP_READER_CALL*)(void*, std::uint8_t*, int);
+        using ReadEsp = int(ESP_READER_CALL*)(void*, const wchar_t*);
+        using SaveEsp = EspReaderBool(ESP_READER_CALL*)(void*, const char*);
+        using SearchBySig = void**(ESP_READER_CALL*)(void*, const char*, const char*, int*);
+        using FreeSearchResults = void(ESP_READER_CALL*)(void**, int);
+        using GetSubRecordCount = int(ESP_READER_CALL*)(void*);
+        using GetSubRecordData = const void*(ESP_READER_CALL*)(void*, int);
+        using GetSubRecordString = const char*(ESP_READER_CALL*)(const void*);
+        using IsSubRecordLocalized = EspReaderBool(ESP_READER_CALL*)(const void*);
+        using GetSubRecordStringId = std::uint32_t(ESP_READER_CALL*)(const void*);
+        using ModifySubRecord = EspReaderBool(ESP_READER_CALL*)(
             void*,
             std::uint32_t,
             const char*,
@@ -314,6 +325,8 @@ namespace
             int,
             int,
             const char*);
+        using GetDialContext = C_LinkDIAL(ESP_READER_DIALOG_CALL*)(void*, int, int);
+        using FreeDialContext = void(ESP_READER_DIALOG_CALL*)(C_LinkDIAL*);
 
         EspApi()
         {
@@ -332,9 +345,15 @@ namespace
             if (_library == nullptr)
                 throw std::runtime_error("EspReader.dll could not be loaded.");
 
+            AbiVersion = Get<GetAbiVersion>("C_GetAbiVersion");
+            LastStatus = Get<GetLastStatus>("C_GetLastStatus");
+            LastError = Get<GetLastErrorUtf8>("C_GetLastErrorUtf8");
+            Version = Get<GetVersion>("C_GetVersion");
+            VersionLength = Get<GetVersionLength>("C_GetVersionLength");
             Create = Get<CreateInstance>("C_CreateInstance");
             Destroy = Get<DestroyInstance>("C_DestroyInstance");
             ConfigureFilter = Get<SetFilter>("C_SetFilter");
+            ReadFilter = Get<GetFilter>("C_GetFilter");
             Read = Get<ReadEsp>("C_ReadEsp");
             Save = Get<SaveEsp>("C_SaveEsp");
             Search = Get<SearchBySig>("C_SearchBySig");
@@ -345,6 +364,8 @@ namespace
             IsLocalized = Get<IsSubRecordLocalized>("C_SubRecordData_IsLocalized");
             GetStringId = Get<GetSubRecordStringId>("C_SubRecordData_GetStringID");
             Modify = Get<ModifySubRecord>("C_ModifySubRecord");
+            ReadDialContext = Get<GetDialContext>("C_GetDialContext");
+            ReleaseDialContext = Get<FreeDialContext>("C_FreeDialContext");
         }
 
         ~EspApi()
@@ -355,9 +376,15 @@ namespace
         EspApi(const EspApi&) = delete;
         EspApi& operator=(const EspApi&) = delete;
 
+        GetAbiVersion AbiVersion = nullptr;
+        GetLastStatus LastStatus = nullptr;
+        GetLastErrorUtf8 LastError = nullptr;
+        GetVersion Version = nullptr;
+        GetVersionLength VersionLength = nullptr;
         CreateInstance Create = nullptr;
         DestroyInstance Destroy = nullptr;
         SetFilter ConfigureFilter = nullptr;
+        GetFilter ReadFilter = nullptr;
         ReadEsp Read = nullptr;
         SaveEsp Save = nullptr;
         SearchBySig Search = nullptr;
@@ -368,6 +395,17 @@ namespace
         IsSubRecordLocalized IsLocalized = nullptr;
         GetSubRecordStringId GetStringId = nullptr;
         ModifySubRecord Modify = nullptr;
+        GetDialContext ReadDialContext = nullptr;
+        FreeDialContext ReleaseDialContext = nullptr;
+
+        void RequireExports(const std::vector<const char*>& names) const
+        {
+            for (const char* name : names)
+            {
+                if (GetProcAddress(_library, name) == nullptr)
+                    throw std::runtime_error(std::string("Missing EspReader export: ") + name);
+            }
+        }
 
     private:
         template<typename T>
@@ -423,6 +461,98 @@ namespace EspReaderTests
     TEST_CLASS(EspReaderParserTests)
     {
     public:
+        TEST_METHOD(PublicAbiHeaderMatchesBinaryContract)
+        {
+            static_assert(sizeof(EspReaderBool) == 1, "EspReaderBool ABI size changed.");
+            static_assert(sizeof(EspReaderStatus) == 4, "EspReaderStatus ABI size changed.");
+            static_assert(sizeof(C_DialResponseNode) == 16, "C_DialResponseNode ABI size changed.");
+            static_assert(sizeof(C_LinkDIAL) == 40, "The x64 C_LinkDIAL ABI size changed.");
+            static_assert(offsetof(C_LinkDIAL, Links) == 24, "C_LinkDIAL pointer offset changed.");
+            static_assert(offsetof(C_LinkDIAL, LinkCount) == 32, "C_LinkDIAL count offset changed.");
+            using ExpectedAbiVersion = std::uint32_t(ESP_READER_CALL*)() noexcept;
+            using ExpectedSave = EspReaderBool(ESP_READER_CALL*)(EspInstance*, const char*) noexcept;
+            using ExpectedDial = C_LinkDIAL(ESP_READER_DIALOG_CALL*)(EspInstance*, int32_t, int32_t) noexcept;
+            static_assert(
+                std::is_same<decltype(&C_GetAbiVersion), ExpectedAbiVersion>::value,
+                "The ABI version calling convention changed.");
+            static_assert(
+                std::is_same<decltype(&C_SaveEsp), ExpectedSave>::value,
+                "The save calling convention or boolean width changed.");
+            static_assert(
+                std::is_same<decltype(&C_GetDialContext), ExpectedDial>::value,
+                "The dialogue calling convention changed.");
+
+            EspApi api;
+            api.RequireExports({
+                "C_GetAbiVersion", "C_GetLastStatus", "C_GetLastErrorUtf8",
+                "C_CreateInstance", "C_DestroyInstance", "C_GetVersion", "C_GetVersionLength",
+                "C_InitFilter", "C_SetSkyrimFilter", "C_GetFilter", "C_SetFilter", "C_ClearFilter",
+                "C_ReadEsp", "C_SaveEsp", "C_Clear", "C_GetFieldReport", "C_GetFieldReportLength",
+                "C_SearchBySig", "FreeSearchResults", "C_GetRecordSig", "C_GetRecordFormID",
+                "C_GetRecordEditorID", "C_GetRecordFlags", "C_GetRecordIndex", "C_GetSubRecordCount",
+                "C_GetSubRecordData_Ptr", "C_SubRecordData_GetOccurrenceIndex",
+                "C_SubRecordData_GetIndex", "C_SubRecordData_GetSig", "C_SubRecordData_GetString",
+                "C_SubRecordData_IsLocalized", "C_SubRecordData_GetStringID",
+                "C_SubRecordData_GetDataSize", "C_SubRecordData_GetData",
+                "C_SubRecordData_GetStringUtf8", "C_SubRecordData_GetSigUtf8",
+                "C_ModifySubRecordByOffset", "C_ModifySubRecord", "C_ClearCharacterTracker",
+                "C_GetCharacterCount", "C_GetCharacterFormID", "C_GetCharacterName",
+                "C_GetCharacterEditorID", "C_GetCharacterVoiceType", "C_GetCharacterGender",
+                "C_GetCharacterLinkedInfoCount", "C_GetCharacterLinkedInfo",
+                "C_GetCharacterLinkedFactionCount", "C_GetCharacterLinkedFaction",
+                "C_GetCharacterLinkedRaceCount", "C_GetCharacterLinkedRace",
+                "C_GetCharacterLinkedVoiceTypeCount", "C_GetCharacterLinkedVoiceType",
+                "C_GetDialContext", "C_GetDialContextByDial", "C_FreeDialContext",
+                "C_GetTitleIndexByBookDesc", "C_GetDescIndexByBookTitle"
+            });
+
+            Assert::AreEqual<std::uint32_t>(ESP_READER_ABI_VERSION, api.AbiVersion());
+            Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_OK, api.LastStatus());
+            const int versionLength = api.VersionLength();
+            Assert::AreEqual(7, versionLength);
+            Assert::AreEqual(std::string("1.0.0.5"), std::string(api.Version(), versionLength));
+
+            Assert::AreEqual(-1, api.Read(nullptr, nullptr));
+            Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_INVALID_ARGUMENT, api.LastStatus());
+            const int errorLength = api.LastError(nullptr, 0);
+            Assert::IsTrue(errorLength > 0);
+            std::vector<std::uint8_t> error(static_cast<std::size_t>(errorLength) + 1);
+            Assert::AreEqual(errorLength, api.LastError(error.data(), static_cast<int>(error.size())));
+            Assert::AreEqual<std::uint8_t>(0, error.back());
+            Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_INVALID_ARGUMENT, api.LastStatus());
+
+            for (int iteration = 0; iteration < 512; ++iteration)
+            {
+                EspHandle handle(api);
+                const char* children[]{ "FULL" };
+                Assert::AreEqual(1, api.ConfigureFilter(handle, "BOOK", children, 1));
+                const int filterLength = api.ReadFilter(handle, nullptr, 0);
+                Assert::IsTrue(filterLength > 0);
+                if (iteration == 0)
+                {
+                    std::vector<std::uint8_t> undersized(static_cast<std::size_t>(filterLength));
+                    Assert::AreEqual(
+                        filterLength,
+                        api.ReadFilter(handle, undersized.data(), static_cast<int>(undersized.size())));
+                    Assert::AreEqual<EspReaderStatus>(
+                        ESP_READER_STATUS_BUFFER_TOO_SMALL,
+                        api.LastStatus());
+                }
+                std::vector<std::uint8_t> filter(static_cast<std::size_t>(filterLength) + 1);
+                Assert::AreEqual(
+                    filterLength,
+                    api.ReadFilter(handle, filter.data(), static_cast<int>(filter.size())));
+                Assert::AreEqual<std::uint8_t>(0, filter.back());
+                Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_OK, api.LastStatus());
+
+                C_LinkDIAL context = api.ReadDialContext(handle, -1, -1);
+                Assert::AreEqual(0, context.HasData);
+                Assert::IsNull(context.Links);
+                Assert::AreEqual<std::uint32_t>(0, context.LinkCount);
+                api.ReleaseDialContext(&context);
+            }
+        }
+
         TEST_METHOD(LoadsDocumentedUtf8AndLocalizedFixtures)
         {
             EspApi api;

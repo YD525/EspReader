@@ -14,7 +14,8 @@ cache, and user-profile roots are replaced before CI uploads failure artifacts. 
 days and must not contain secrets or developer paths.
 
 The weekly and manually dispatchable sanitizer job rebuilds Release x64 with AddressSanitizer and runs the same parser
-suite. Tag releases call the same build and test wrappers as pull requests before publishing the DLL and checksum.
+suite. Tag releases call the same build and test wrappers as pull requests before publishing the DLL, canonical C ABI
+header, and their checksums.
 
 Run the regular gates from a Visual Studio developer shell:
 

@@ -131,6 +131,7 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>ESP_READER_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
@@ -147,6 +148,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EspBinaryReader.h" />
+    <ClInclude Include="EspReaderApi.h" />
     <ClInclude Include="EspRecord.cpp" />
     <ClInclude Include="miniz.h" />
     <ClInclude Include="resource.h" />

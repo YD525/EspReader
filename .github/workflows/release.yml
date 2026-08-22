@@ -40,16 +40,21 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Create checksum
+      - name: Create release checksums
         shell: pwsh
         run: |
-          $artifact = ".\x64\Release\EspReader.dll"
-          if (-not (Test-Path -LiteralPath $artifact)) {
+          $artifacts = @(
+              ".\x64\Release\EspReader.dll"
+              ".\EspReader\EspReaderApi.h"
+          )
+          foreach ($artifact in $artifacts) {
+            if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
               throw "Release artifact was not produced: $artifact"
-          }
+            }
 
-          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  EspReader.dll" | Set-Content "$artifact.sha256" -Encoding ascii
+            $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path -Leaf $artifact)" | Set-Content "$artifact.sha256" -Encoding ascii
+          }
 
       - name: Publish GitHub Release
         shell: pwsh
@@ -59,5 +64,7 @@ jobs:
           gh release create "$env:GITHUB_REF_NAME" `
             ".\x64\Release\EspReader.dll" `
             ".\x64\Release\EspReader.dll.sha256" `
+            ".\EspReader\EspReaderApi.h" `
+            ".\EspReader\EspReaderApi.h.sha256" `
             --generate-notes `
             --verify-tag
