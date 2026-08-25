@@ -24,7 +24,7 @@
 
 class EspInstance
 {
-public:
+    public:
     std::unique_ptr<ESP_HeuristicAnalysis> TextValidator;
     std::unique_ptr<CharacterTracker> CharTracker;
     std::unique_ptr<EspData> Data;
@@ -415,7 +415,7 @@ static void ProcessContent(
 
 static std::mutex SaveEspLock;
 
-static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
+static int SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
 {
     std::lock_guard<std::mutex> Lock(SaveEspLock);
 
@@ -447,11 +447,19 @@ static bool SaveEsp_Inst(EspInstance* inst, const char* Utf8Path)
         auto ModifiedIndex = BuildModifiedIndex(inst);
         ProcessContent(reader, Fout, reader.Size(), ModifiedIndex, 0);
         Fout.flush();
-        return static_cast<bool>(Fout);
+        bool Result = static_cast<bool>(Fout);
+        if (Result)
+        {
+            return RESULT_OK;
+        }
+        else
+        {
+            return RESULT_ERROR;
+        }
     }
     catch (...)
     {
-        return false;
+        return RESULT_ERROR;
     }
 }
 
@@ -474,7 +482,7 @@ static void InitFilterImpl(EspInstance* h)
 
 static int GetFilterImpl(EspInstance* h, uint8_t* buffer, int bufferSize)
 {
-    if (!h || !h->Filter) return -1;
+    if (!h || !h->Filter) return RESULT_ERROR;
     std::string result;
     for (const auto& kv : h->Filter->CurrentConfig)
     {
@@ -497,7 +505,7 @@ static int GetFilterImpl(EspInstance* h, uint8_t* buffer, int bufferSize)
 
 static int SetSkyrimFilterImpl(EspInstance* h)
 {
-    if (!h || !h->Filter) return -1;
+    if (!h || !h->Filter) return RESULT_ERROR;
     std::unordered_map<std::string, std::vector<std::string>> Config =
     {
        {"ACTI",{"FULL","RNAM"}},{"ALCH",{"FULL"}},{"AMMO",{"FULL","DESC"}},
@@ -520,7 +528,7 @@ static int SetSkyrimFilterImpl(EspInstance* h)
 
 static int SetFilterImpl(EspInstance* h, const char* ParentSig, const char** ChildSigs, int ChildCount)
 {
-    if (!h || !h->Filter || !ParentSig) return -1;
+    if (!h || !h->Filter || !ParentSig) return RESULT_ERROR;
     std::string Parent(ParentSig);
     std::vector<std::string>& Vec = h->Filter->CurrentConfig[Parent];
     for (int i = 0; i < ChildCount; ++i) Vec.push_back(std::string(ChildSigs[i]));
@@ -617,13 +625,13 @@ static void FreeDialContextImpl(C_LinkDIAL* context)
 
 static int GetTitleIndexByBookDescImpl(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
-    if (!Handle || !Handle->Data) return -1;
+    if (!Handle || !Handle->Data) return RESULT_ERROR;
     return Handle->Data->GetTitleIndexByBookDesc(RecordOffset, DescSubOffset);
 }
 
 static int GetDescIndexByBookTitleImpl(EspInstance* Handle, int RecordOffset, int DescSubOffset)
 {
-    if (!Handle || !Handle->Data) return -1;
+    if (!Handle || !Handle->Data) return RESULT_ERROR;
     return Handle->Data->GetDescIndexByBookTitle(RecordOffset, DescSubOffset);
 }
 
@@ -631,12 +639,12 @@ static int GetDescIndexByBookTitleImpl(EspInstance* Handle, int RecordOffset, in
 //Returns 0 if the file is not found. Returns -1 if not initialized. Returns -2 on code error. A value greater than 0 indicates success.
 static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
 {
-    if (!Instance || !Instance->Filter || !EspPath) return -1;
+    if (!Instance || !Instance->Filter || !EspPath) return RESULT_NOT_INITIALIZED;
 
     try
     {
         std::ifstream stream(EspPath, std::ios::binary);
-        if (!stream.is_open()) return 0;
+        if (!stream.is_open()) return RESULT_NOT_FOUND;
 
         EspParsedDocument parsed = EspParser::Parse(stream, *Instance->Filter);
         Instance->Filter->FileIsLocalized = parsed.IsLocalized();
@@ -647,15 +655,15 @@ static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
         Instance->CharacterCacheDirty = true;
         Instance->LastSetPath = EspPath;
 
-        return 1;
+        return RESULT_OK;
     }
     catch (...)
     {
-        return -2;
+        return RESULT_ERROR;
     }
 }
 
-static bool SaveEspImpl(EspInstance* h, const char* Utf8Path)
+static int SaveEspImpl(EspInstance* h, const char* Utf8Path)
 {
     return SaveEsp_Inst(h, Utf8Path);
 }
@@ -756,7 +764,7 @@ static int GetSubRecordSigUtf8Impl(const SubRecordData* s, uint8_t* b, int bs)
 }
 
 // Modify
-static bool ModifySubRecordByOffsetImpl(EspInstance* h, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
+static int ModifySubRecordByOffsetImpl(EspInstance* h, int IsCell, int RecordOffset, int SubOffset, const char* NewUtf8Data)
 {
     if (!h || !h->Data) return false;
     std::vector<EspRecord>& Records = (IsCell == 1) ? h->Data->CellRecords : h->Data->Records;
@@ -766,41 +774,76 @@ static bool ModifySubRecordByOffsetImpl(EspInstance* h, int IsCell, int RecordOf
     SubRecordData& Sub = Rec.SubRecords[SubOffset];
     if (NewUtf8Data)
     {
-        int len = (int)std::strlen(NewUtf8Data);
-        Sub.Data.resize(len + 1);
-        std::memcpy(Sub.Data.data(), NewUtf8Data, len);
-        Sub.Data[len] = '\0';
-        Sub.IsModify = true;
+        if (Sub.StringID <= 0)
+        {
+            int len = (int)std::strlen(NewUtf8Data);
+            Sub.Data.resize(len + 1);
+            std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+            Sub.Data[len] = '\0';
+            Sub.IsModify = true;
+
+            return RESULT_OK;
+        }
+        else
+        {
+            //Modifying records containing stringIDs is prohibited.
+            return RESULT_NOT_FOUND;
+        }
     }
-    Sub.StringID = 0; Sub.IsLocalized = false;
-    return true;
+    else
+    {
+        return RESULT_ERROR;
+    }
 }
 
-static bool ModifySubRecordImpl(EspInstance* h, uint32_t FormID, const char* RecordSig, const char* SubSig,
+static int ModifySubRecordImpl(EspInstance* h, int IsCell,uint32_t FormID, const char* RecordSig, const char* SubSig,
     int OccurrenceIndex, int Index, const char* NewUtf8Data)
 {
     if (!h || !h->Data) return false;
     std::string strRec = RecordSig ? RecordSig : "";
     std::string strSub = SubSig ? SubSig : "";
-    auto modify = [&](std::vector<EspRecord>& recs) -> bool {
+    auto modify = [&](std::vector<EspRecord>& recs) -> int {
         for (auto& Rec : recs)
             if (Rec.FormID == FormID && Rec.Sig == strRec)
                 for (auto& Sub : Rec.SubRecords)
                     if (Sub.Sig == strSub && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
                     {
-                        if (NewUtf8Data) {
-                            int len = (int)std::strlen(NewUtf8Data);
-                            Sub.Data.resize(len + 1);
-                            std::memcpy(Sub.Data.data(), NewUtf8Data, len);
-                            Sub.Data[len] = '\0';
-                            Sub.IsModify = true;
+                        if (NewUtf8Data) 
+                        {
+                            if (Sub.StringID <= 0)
+                            {
+                                int len = (int)std::strlen(NewUtf8Data);
+                                Sub.Data.resize(len + 1);
+                                std::memcpy(Sub.Data.data(), NewUtf8Data, len);
+                                Sub.Data[len] = '\0';
+                                Sub.IsModify = true;
+
+                                return RESULT_OK;
+                            }
+                            else
+                            {
+                                //Modifying records containing stringIDs is prohibited.
+                                return RESULT_NOT_FOUND;
+                            }
                         }
-                        Sub.StringID = 0; Sub.IsLocalized = false;
-                        return true;
+                        else
+                        {
+                            return RESULT_ERROR;
+                        }
                     }
-        return false;
+            return RESULT_NOT_FOUND;
         };
-    return modify(h->Data->Records) || modify(h->Data->CellRecords);
+
+        if (IsCell == 1)
+        {
+            return modify(h->Data->CellRecords);
+        }
+        else
+        {
+            return modify(h->Data->Records);
+        }
+
+        return RESULT_NOT_FOUND;
 }
 
 // Character tracker
@@ -1091,14 +1134,14 @@ ESP_READER_WRAP_CDECL(
     (const SubRecordData* subRecord, uint8_t* buffer, int32_t bufferSize),
     (subRecord, buffer, bufferSize))
 ESP_READER_WRAP_CDECL(
-    EspReaderBool, C_ModifySubRecordByOffset, ModifySubRecordByOffsetImpl, 0,
+    int32_t, C_ModifySubRecordByOffset, ModifySubRecordByOffsetImpl, 0,
     (EspInstance* handle, int32_t isCell, int32_t recordOffset, int32_t subOffset, const char* newUtf8Data),
     (handle, isCell, recordOffset, subOffset, newUtf8Data))
 ESP_READER_WRAP_CDECL(
-    EspReaderBool, C_ModifySubRecord, ModifySubRecordImpl, 0,
-    (EspInstance* handle, uint32_t formId, const char* recordSig, const char* subSig,
-        int32_t occurrenceIndex, int32_t globalIndex, const char* newUtf8Data),
-    (handle, formId, recordSig, subSig, occurrenceIndex, globalIndex, newUtf8Data))
+        int32_t, C_ModifySubRecord, ModifySubRecordImpl, 0,
+        (EspInstance* handle, int isCell, uint32_t formId, const char* recordSig, const char* subSig,
+            int32_t occurrenceIndex, int32_t globalIndex, const char* newUtf8Data),
+        (handle, isCell, formId, recordSig, subSig, occurrenceIndex, globalIndex, newUtf8Data))
 ESP_READER_WRAP_VOID_CDECL(
     C_ClearCharacterTracker, ClearCharacterTrackerImpl, (EspInstance* handle), (handle))
 ESP_READER_WRAP_CDECL(
@@ -1232,18 +1275,21 @@ int32_t ESP_READER_CALL C_ReadEsp(EspInstance* handle, const wchar_t* espPath) n
     });
 }
 
-EspReaderBool ESP_READER_CALL C_SaveEsp(EspInstance* handle, const char* utf8Path) noexcept
+int32_t ESP_READER_CALL C_SaveEsp(EspInstance* handle, const char* utf8Path) noexcept
 {
-    return InvokeAbi<EspReaderBool>(0, [&]() -> EspReaderBool
+    return InvokeAbi<int32_t>(0, [&]() -> int32_t
     {
         if (handle == nullptr || utf8Path == nullptr)
         {
             SetAbiError(ESP_READER_STATUS_INVALID_ARGUMENT, "The EspReader handle or UTF-8 path is null.");
             return 0;
         }
-        const EspReaderBool result = SaveEspImpl(handle, utf8Path) ? 1 : 0;
-        if (result == 0)
+
+        const int32_t result = SaveEspImpl(handle, utf8Path);
+
+        if (result < 0)
             SetAbiError(ESP_READER_STATUS_IO_ERROR, "The plugin could not be saved.");
+
         return result;
     });
 }
@@ -1322,7 +1368,7 @@ int main()
     WideCharToMultiByte(CP_UTF8, 0, wPath.c_str(), -1, &utf8Path[0], len, NULL, NULL);
     utf8Path.pop_back();
 
-    bool result = SaveEsp_Inst(instance, utf8Path.c_str());
+    int result = SaveEsp_Inst(instance, utf8Path.c_str());
     std::cout << "Save result: " << (result ? "true" : "false") << "\n";
 
     if (state == 0)

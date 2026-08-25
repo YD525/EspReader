@@ -303,19 +303,19 @@ namespace
         using GetAbiVersion = std::uint32_t(ESP_READER_CALL*)();
         using GetLastStatus = EspReaderStatus(ESP_READER_CALL*)();
         using GetLastErrorUtf8 = std::int32_t(ESP_READER_CALL*)(std::uint8_t*, std::int32_t);
-        using GetVersion = const char*(ESP_READER_CALL*)();
+        using GetVersion = const char* (ESP_READER_CALL*)();
         using GetVersionLength = std::int32_t(ESP_READER_CALL*)();
-        using CreateInstance = void*(ESP_READER_CALL*)();
+        using CreateInstance = void* (ESP_READER_CALL*)();
         using DestroyInstance = void(ESP_READER_CALL*)(void*);
         using SetFilter = int(ESP_READER_CALL*)(void*, const char*, const char**, int);
         using GetFilter = int(ESP_READER_CALL*)(void*, std::uint8_t*, int);
         using ReadEsp = int(ESP_READER_CALL*)(void*, const wchar_t*);
         using SaveEsp = EspReaderBool(ESP_READER_CALL*)(void*, const char*);
-        using SearchBySig = void**(ESP_READER_CALL*)(void*, const char*, const char*, int*);
+        using SearchBySig = void** (ESP_READER_CALL*)(void*, const char*, const char*, int*);
         using FreeSearchResults = void(ESP_READER_CALL*)(void**, int);
         using GetSubRecordCount = int(ESP_READER_CALL*)(void*);
-        using GetSubRecordData = const void*(ESP_READER_CALL*)(void*, int);
-        using GetSubRecordString = const char*(ESP_READER_CALL*)(const void*);
+        using GetSubRecordData = const void* (ESP_READER_CALL*)(void*, int);
+        using GetSubRecordString = const char* (ESP_READER_CALL*)(const void*);
         using IsSubRecordLocalized = EspReaderBool(ESP_READER_CALL*)(const void*);
         using GetSubRecordStringId = std::uint32_t(ESP_READER_CALL*)(const void*);
         using ModifySubRecord = EspReaderBool(ESP_READER_CALL*)(
@@ -435,7 +435,7 @@ namespace
             _api.Destroy(_handle);
         }
 
-        operator void*() const noexcept
+        operator void* () const noexcept
         {
             return _handle;
         }
@@ -483,9 +483,9 @@ namespace EspReaderTests
             filter.AllowAll = true;
 
             Assert::ExpectException<std::runtime_error>([&fixture, &filter]()
-            {
-                static_cast<void>(EspParser::Parse(fixture.data(), fixture.size(), filter));
-            });
+                {
+                    static_cast<void>(EspParser::Parse(fixture.data(), fixture.size(), filter));
+                });
         }
 
         TEST_METHOD(PublicAbiHeaderMatchesBinaryContract)
@@ -531,13 +531,13 @@ namespace EspReaderTests
                 "C_GetCharacterLinkedVoiceTypeCount", "C_GetCharacterLinkedVoiceType",
                 "C_GetDialContext", "C_GetDialContextByDial", "C_FreeDialContext",
                 "C_GetTitleIndexByBookDesc", "C_GetDescIndexByBookTitle"
-            });
+                });
 
             Assert::AreEqual<std::uint32_t>(ESP_READER_ABI_VERSION, api.AbiVersion());
             Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_OK, api.LastStatus());
             const int versionLength = api.VersionLength();
             Assert::AreEqual(7, versionLength);
-            Assert::AreEqual(std::string("1.0.0.7"), std::string(api.Version(), versionLength));
+            Assert::AreEqual(std::string("1.0.0.6"), std::string(api.Version(), versionLength));
 
             Assert::AreEqual(-1, api.Read(nullptr, nullptr));
             Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_INVALID_ARGUMENT, api.LastStatus());
@@ -589,7 +589,7 @@ namespace EspReaderTests
 
             const std::vector<std::uint8_t> utf8Fixture =
                 ReadHexFixture(L"valid-roundtrip.esp.hex");
-            Assert::AreEqual(1, ReadFixture(api, handle, utf8Fixture));
+            Assert::AreEqual(0, ReadFixture(api, handle, utf8Fixture));
 
             int count = 0;
             void** records = api.Search(handle, "BOOK", "FULL", &count);
@@ -607,7 +607,7 @@ namespace EspReaderTests
 
             const std::vector<std::uint8_t> localizedFixture =
                 ReadHexFixture(L"localized.esm.hex");
-            Assert::AreEqual(1, ReadFixture(api, handle, localizedFixture, L".esm"));
+            Assert::AreEqual(0, ReadFixture(api, handle, localizedFixture, L".esm"));
 
             count = 0;
             records = api.Search(handle, "BOOK", "FULL", &count);
@@ -625,7 +625,7 @@ namespace EspReaderTests
             EspApi api;
             EspHandle handle(api);
             Assert::AreEqual(
-                0,
+                1,
                 ReadFixture(
                     api,
                     handle,
@@ -644,7 +644,7 @@ namespace EspReaderTests
 
             const char* children[]{ "FULL" };
             Assert::AreEqual(1, api.ConfigureFilter(handle, "BOOK", children, 1));
-            Assert::AreEqual(1, api.Read(handle, input.Path().c_str()));
+            Assert::AreEqual(0, api.Read(handle, input.Path().c_str()));
             const std::string replacement =
                 "Neu: Gr\xC3\xBC\xC3\x9F" "e \xE6\x9D\xB1\xE4\xBA\xAC";
             Assert::IsTrue(api.Modify(
@@ -685,7 +685,7 @@ namespace EspReaderTests
             Assert::AreEqual(1, api.ConfigureFilter(handle, "BOOK", children, 1));
 
             const ComplexFixture fixture = CreateComplexFixture();
-            Assert::AreEqual(1, ReadFixture(api, handle, fixture.Bytes));
+            Assert::AreEqual(0, ReadFixture(api, handle, fixture.Bytes));
 
             int count = 0;
             void** records = api.Search(handle, "BOOK", "FULL", &count);
@@ -709,7 +709,7 @@ namespace EspReaderTests
             for (std::size_t length = 0; length < fixture.size(); ++length)
             {
                 const std::vector<std::uint8_t> prefix(fixture.begin(), fixture.begin() + length);
-                Assert::AreEqual(0, ReadFixture(api, handle, prefix));
+                Assert::AreEqual(1, ReadFixture(api, handle, prefix));
             }
         }
 
@@ -722,7 +722,7 @@ namespace EspReaderTests
             for (std::size_t length = fixture.MinimalEnd + 1; length < fixture.UncompressedRecordEnd; ++length)
             {
                 const std::vector<std::uint8_t> prefix(fixture.Bytes.begin(), fixture.Bytes.begin() + length);
-                Assert::AreEqual(0, ReadFixture(api, handle, prefix));
+                Assert::AreEqual(1, ReadFixture(api, handle, prefix));
             }
             for (std::size_t length = fixture.GroupStart + 1; length < fixture.Bytes.size(); ++length)
             {
@@ -738,7 +738,7 @@ namespace EspReaderTests
 
             std::vector<std::uint8_t> invalidRecord = CreateMinimalFixture();
             ReplaceUInt32(invalidRecord, 4, 0xFFFFFFFF);
-            Assert::AreEqual(0, ReadFixture(api, handle, invalidRecord));
+            Assert::AreEqual(1, ReadFixture(api, handle, invalidRecord));
 
             std::vector<std::uint8_t> invalidSubrecord = CreateMinimalFixture();
             ReplaceUInt16(invalidSubrecord, 28, 0xFFFF);
@@ -766,7 +766,7 @@ namespace EspReaderTests
             EspApi api;
             EspHandle handle(api);
 
-            Assert::AreEqual(1, ReadFixture(api, handle, CreateNestedFixture(128)));
+            Assert::AreEqual(0, ReadFixture(api, handle, CreateNestedFixture(128)));
             Assert::AreEqual(1, ReadFixture(api, handle, CreateNestedFixture(129)));
         }
 
@@ -779,7 +779,7 @@ namespace EspReaderTests
             const std::vector<std::uint8_t> fixture = CreateExtendedSubRecordFixture();
             input.Write(fixture);
 
-            Assert::AreEqual(1, api.Read(handle, input.Path().c_str()));
+            Assert::AreEqual(0, api.Read(handle, input.Path().c_str()));
             Assert::IsTrue(api.Save(handle, output.Path().u8string().c_str()));
             Assert::IsTrue(fixture == output.Read());
         }
@@ -798,7 +798,7 @@ namespace EspReaderTests
             invalid.Write(malformed);
 
             Assert::AreEqual(0, api.Read(handle, valid.Path().c_str()));
-            Assert::AreEqual(0, api.Read(handle, invalid.Path().c_str()));
+            Assert::AreEqual(1, api.Read(handle, invalid.Path().c_str()));
             Assert::IsTrue(api.Save(handle, output.Path().u8string().c_str()));
             Assert::IsTrue(fixture.Bytes == output.Read());
             Assert::AreEqual(-1, api.Read(nullptr, valid.Path().c_str()));
