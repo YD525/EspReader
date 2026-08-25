@@ -317,9 +317,10 @@ struct SubRecordData
 	uint32_t StringID;
 	int OccurrenceIndex;
 	int Index;
+	int DSDIndex;
 	bool IsModify;
 
-	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), Index(0), IsModify(false) {}
+	SubRecordData() : IsLocalized(false), StringID(0), OccurrenceIndex(0), Index(0),DSDIndex(-1),IsModify(false) {}
 
 	std::string GetString() const
 	{
@@ -616,6 +617,14 @@ public:
 	std::vector<uint32_t> G_PendingFactions;
 	std::vector<uint32_t> G_PendingRaces;
 
+	uint32_t PendingStageIndex = 0;
+	bool     HasPendingStageIndex = false;
+	std::vector<uint8_t> PendingStageIndexRaw;
+
+	uint32_t PendingObjectiveIndex = 0;
+	bool     HasPendingObjectiveIndex = false;
+	std::vector<uint8_t> PendingObjectiveIndexRaw;
+
 	void OnSubRecord(CharacterTracker* CurrentTracker, SubRecordData Sub, const uint8_t* DataPtr, size_t Size)
 	{
 		if (!CurrentTracker || (!DataPtr && Size != 0))
@@ -695,6 +704,28 @@ public:
 						break;
 					}
 				}
+		}
+
+		if (Sig == "QUST")
+		{
+			if (Sub.Sig == "INDX" && Size > 0)
+			{
+				PendingStageIndexRaw.assign(DataPtr, DataPtr + Size);
+				HasPendingStageIndex = true;
+
+				uint16_t StageIdx = 0;
+				std::memcpy(&StageIdx, DataPtr, sizeof(uint16_t));
+				PendingStageIndex = StageIdx;
+			}
+			else if (Sub.Sig == "QOBJ" && Size > 0)
+			{
+				PendingObjectiveIndexRaw.assign(DataPtr, DataPtr + Size);
+				HasPendingObjectiveIndex = true;
+
+				uint16_t ObjIdx = 0;
+				std::memcpy(&ObjIdx, DataPtr, sizeof(uint16_t));
+				PendingObjectiveIndex = ObjIdx;
+			}
 		}
 	}
 
@@ -879,6 +910,38 @@ public:
 
 		Sub.OccurrenceIndex = CurrentOccurrence;
 		Sub.Index = static_cast<int>(SubRecords.size());
+
+		if (Sig == "MESG" && Sub.Sig == "ITXT")
+		{
+			Sub.DSDIndex = CurrentOccurrence;
+		}
+		else if (Sig == "PERK" && Sub.Sig == "EPFD")
+		{
+			Sub.DSDIndex = CurrentOccurrence;
+		}
+		else if (Sig == "INFO" && Sub.Sig == "NAM1")
+		{
+			Sub.DSDIndex = CurrentOccurrence;
+		}
+		else if (Sig == "QUST")
+		{
+			if (Sub.Sig == "NNAM")
+			{
+				Sub.DSDIndex = HasPendingObjectiveIndex ? static_cast<int>(PendingObjectiveIndex) : CurrentOccurrence;
+			}
+			else if (Sub.Sig == "CNAM")
+			{
+				Sub.DSDIndex = HasPendingStageIndex ? static_cast<int>(PendingStageIndex) : CurrentOccurrence;
+			}
+			else
+			{
+				Sub.DSDIndex = -1;
+			}
+		}
+		else
+		{
+			Sub.DSDIndex = -1;
+		}
 
 		//===== PERK Special Handling: Recording EPFT Value =====
 		if (Sig == "PERK" && Sub.Sig == "EPFT" && DataPtr && Size >= 1)

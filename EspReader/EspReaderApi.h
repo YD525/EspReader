@@ -167,6 +167,8 @@ ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetOccurrenceIndex(
     const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
 ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetIndex(
     const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
+ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetDSDIndex(
+    const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
 ESP_READER_API const char* ESP_READER_CALL C_SubRecordData_GetSig(
     const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
 ESP_READER_API const char* ESP_READER_CALL C_SubRecordData_GetString(
