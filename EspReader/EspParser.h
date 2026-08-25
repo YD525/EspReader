@@ -15,6 +15,12 @@
 
 #include "EspRecord.cpp"
 
+constexpr int RESULT_OK = 1;
+constexpr int RESULT_NOT_FOUND = 0;
+constexpr int RESULT_NOT_INITIALIZED = -1;
+constexpr int RESULT_ERROR = -2;
+
+
 class EspBinaryReader;
 
 // Owns a completed parse result. Callers can inspect the model as read-only data or transfer

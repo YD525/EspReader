@@ -303,19 +303,19 @@ namespace
         using GetAbiVersion = std::uint32_t(ESP_READER_CALL*)();
         using GetLastStatus = EspReaderStatus(ESP_READER_CALL*)();
         using GetLastErrorUtf8 = std::int32_t(ESP_READER_CALL*)(std::uint8_t*, std::int32_t);
-        using GetVersion = const char*(ESP_READER_CALL*)();
+        using GetVersion = const char* (ESP_READER_CALL*)();
         using GetVersionLength = std::int32_t(ESP_READER_CALL*)();
-        using CreateInstance = void*(ESP_READER_CALL*)();
+        using CreateInstance = void* (ESP_READER_CALL*)();
         using DestroyInstance = void(ESP_READER_CALL*)(void*);
         using SetFilter = int(ESP_READER_CALL*)(void*, const char*, const char**, int);
         using GetFilter = int(ESP_READER_CALL*)(void*, std::uint8_t*, int);
         using ReadEsp = int(ESP_READER_CALL*)(void*, const wchar_t*);
         using SaveEsp = EspReaderBool(ESP_READER_CALL*)(void*, const char*);
-        using SearchBySig = void**(ESP_READER_CALL*)(void*, const char*, const char*, int*);
+        using SearchBySig = void** (ESP_READER_CALL*)(void*, const char*, const char*, int*);
         using FreeSearchResults = void(ESP_READER_CALL*)(void**, int);
         using GetSubRecordCount = int(ESP_READER_CALL*)(void*);
-        using GetSubRecordData = const void*(ESP_READER_CALL*)(void*, int);
-        using GetSubRecordString = const char*(ESP_READER_CALL*)(const void*);
+        using GetSubRecordData = const void* (ESP_READER_CALL*)(void*, int);
+        using GetSubRecordString = const char* (ESP_READER_CALL*)(const void*);
         using IsSubRecordLocalized = EspReaderBool(ESP_READER_CALL*)(const void*);
         using GetSubRecordStringId = std::uint32_t(ESP_READER_CALL*)(const void*);
         using ModifySubRecord = EspReaderBool(ESP_READER_CALL*)(
@@ -435,7 +435,7 @@ namespace
             _api.Destroy(_handle);
         }
 
-        operator void*() const noexcept
+        operator void* () const noexcept
         {
             return _handle;
         }
@@ -483,9 +483,9 @@ namespace EspReaderTests
             filter.AllowAll = true;
 
             Assert::ExpectException<std::runtime_error>([&fixture, &filter]()
-            {
-                static_cast<void>(EspParser::Parse(fixture.data(), fixture.size(), filter));
-            });
+                {
+                    static_cast<void>(EspParser::Parse(fixture.data(), fixture.size(), filter));
+                });
         }
 
         TEST_METHOD(PublicAbiHeaderMatchesBinaryContract)
@@ -531,7 +531,7 @@ namespace EspReaderTests
                 "C_GetCharacterLinkedVoiceTypeCount", "C_GetCharacterLinkedVoiceType",
                 "C_GetDialContext", "C_GetDialContextByDial", "C_FreeDialContext",
                 "C_GetTitleIndexByBookDesc", "C_GetDescIndexByBookTitle"
-            });
+                });
 
             Assert::AreEqual<std::uint32_t>(ESP_READER_ABI_VERSION, api.AbiVersion());
             Assert::AreEqual<EspReaderStatus>(ESP_READER_STATUS_OK, api.LastStatus());

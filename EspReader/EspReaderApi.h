@@ -133,7 +133,7 @@ ESP_READER_API void ESP_READER_CALL C_ClearFilter(EspInstance* handle) ESP_READE
 ESP_READER_API int32_t ESP_READER_CALL C_ReadEsp(
     EspInstance* handle,
     const wchar_t* espPath) ESP_READER_NOEXCEPT;
-ESP_READER_API EspReaderBool ESP_READER_CALL C_SaveEsp(
+ESP_READER_API int32_t ESP_READER_CALL C_SaveEsp(
     EspInstance* handle,
     const char* utf8Path) ESP_READER_NOEXCEPT;
 ESP_READER_API void ESP_READER_CALL C_Clear(EspInstance* handle) ESP_READER_NOEXCEPT;
@@ -190,13 +190,13 @@ ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetSigUtf8(
     uint8_t* buffer,
     int32_t bufferSize) ESP_READER_NOEXCEPT;
 
-ESP_READER_API EspReaderBool ESP_READER_CALL C_ModifySubRecordByOffset(
+ESP_READER_API int32_t ESP_READER_CALL C_ModifySubRecordByOffset(
     EspInstance* handle,
     int32_t isCell,
     int32_t recordOffset,
     int32_t subOffset,
     const char* newUtf8Data) ESP_READER_NOEXCEPT;
-ESP_READER_API EspReaderBool ESP_READER_CALL C_ModifySubRecord(
+ESP_READER_API int32_t ESP_READER_CALL C_ModifySubRecord(
     EspInstance* handle,
     uint32_t formId,
     const char* recordSig,
