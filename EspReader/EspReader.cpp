@@ -56,7 +56,7 @@ public:
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.0.0.6";
+static const std::string Version = "1.0.0.7";
 
 // ============================================================
 //  Character cache helpers
@@ -628,7 +628,7 @@ static int GetDescIndexByBookTitleImpl(EspInstance* Handle, int RecordOffset, in
 }
 
 // --- Other C API functions (unchanged) ---
-
+//Returns 0 if the file is not found. Returns -1 if not initialized. Returns -2 on code error. A value greater than 0 indicates success.
 static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
 {
     if (!Instance || !Instance->Filter || !EspPath) return -1;
@@ -636,7 +636,7 @@ static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
     try
     {
         std::ifstream stream(EspPath, std::ios::binary);
-        if (!stream.is_open()) return 1;
+        if (!stream.is_open()) return 0;
 
         EspParsedDocument parsed = EspParser::Parse(stream, *Instance->Filter);
         Instance->Filter->FileIsLocalized = parsed.IsLocalized();
@@ -647,11 +647,11 @@ static int ReadEspImpl(EspInstance* Instance, const wchar_t* EspPath)
         Instance->CharacterCacheDirty = true;
         Instance->LastSetPath = EspPath;
 
-        return 0;
+        return 1;
     }
     catch (...)
     {
-        return 1;
+        return -2;
     }
 }
 
