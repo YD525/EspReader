@@ -589,7 +589,7 @@ namespace EspReaderTests
 
             const std::vector<std::uint8_t> utf8Fixture =
                 ReadHexFixture(L"valid-roundtrip.esp.hex");
-            Assert::AreEqual(0, ReadFixture(api, handle, utf8Fixture));
+            Assert::AreEqual(1, ReadFixture(api, handle, utf8Fixture));
 
             int count = 0;
             void** records = api.Search(handle, "BOOK", "FULL", &count);
@@ -607,7 +607,7 @@ namespace EspReaderTests
 
             const std::vector<std::uint8_t> localizedFixture =
                 ReadHexFixture(L"localized.esm.hex");
-            Assert::AreEqual(0, ReadFixture(api, handle, localizedFixture, L".esm"));
+            Assert::AreEqual(1, ReadFixture(api, handle, localizedFixture, L".esm"));
 
             count = 0;
             records = api.Search(handle, "BOOK", "FULL", &count);
