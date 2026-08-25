@@ -736,6 +736,8 @@ static int GetSubRecordCountImpl(EspRecord* r) { return r ? (int)r->SubRecords.s
 
 static int GetSubRecordOccurrenceIndexImpl(const SubRecordData* s) { return s ? s->OccurrenceIndex : -1; }
 static int GetSubRecordIndexImpl(const SubRecordData* s) { return s ? s->Index : -1; }
+static int GetSubRecordDSDIndexImpl(const SubRecordData* s) { return s ? s->DSDIndex : -1; }
+
 static const char* GetSubRecordSigImpl(const SubRecordData* s) { return s ? s->Sig.c_str() : nullptr; }
 static const char* GetSubRecordStringImpl(const SubRecordData* s)
 {
@@ -787,7 +789,7 @@ static int ModifySubRecordByOffsetImpl(EspInstance* h, int IsCell, int RecordOff
         else
         {
             //Modifying records containing stringIDs is prohibited.
-            return RESULT_NOT_FOUND;
+            return RESULT_REJECTED;
         }
     }
     else
@@ -804,11 +806,14 @@ static int ModifySubRecordImpl(EspInstance* h, int IsCell,uint32_t FormID, const
     std::string strSub = SubSig ? SubSig : "";
     auto modify = [&](std::vector<EspRecord>& recs) -> int {
         for (auto& Rec : recs)
+        {
             if (Rec.FormID == FormID && Rec.Sig == strRec)
+            {
                 for (auto& Sub : Rec.SubRecords)
+                {
                     if (Sub.Sig == strSub && Sub.OccurrenceIndex == OccurrenceIndex && Sub.Index == Index)
                     {
-                        if (NewUtf8Data) 
+                        if (NewUtf8Data)
                         {
                             if (Sub.StringID <= 0)
                             {
@@ -823,7 +828,7 @@ static int ModifySubRecordImpl(EspInstance* h, int IsCell,uint32_t FormID, const
                             else
                             {
                                 //Modifying records containing stringIDs is prohibited.
-                                return RESULT_NOT_FOUND;
+                                return RESULT_REJECTED;
                             }
                         }
                         else
@@ -831,7 +836,11 @@ static int ModifySubRecordImpl(EspInstance* h, int IsCell,uint32_t FormID, const
                             return RESULT_ERROR;
                         }
                     }
-            return RESULT_NOT_FOUND;
+                }  
+            }
+        }
+        
+        return RESULT_NOT_FOUND;
         };
 
         if (IsCell == 1)
@@ -1106,6 +1115,11 @@ ESP_READER_WRAP_CDECL(
 ESP_READER_WRAP_CDECL(
     int32_t, C_SubRecordData_GetIndex, GetSubRecordIndexImpl, -1,
     (const SubRecordData* subRecord), (subRecord))
+
+    ESP_READER_WRAP_CDECL(
+    int32_t,C_SubRecordData_GetDSDIndex,GetSubRecordDSDIndexImpl,           -1,                                 
+    (const SubRecordData* subRecord), (subRecord))
+
 ESP_READER_WRAP_CDECL(
     const char*, C_SubRecordData_GetSig, GetSubRecordSigImpl, nullptr,
     (const SubRecordData* subRecord), (subRecord))

@@ -15,10 +15,12 @@
 
 #include "EspRecord.cpp"
 
-constexpr int RESULT_OK = 1;
-constexpr int RESULT_NOT_FOUND = 0;
-constexpr int RESULT_NOT_INITIALIZED = -1;
-constexpr int RESULT_ERROR = -2;
+#define RESULT_OK 1
+#define RESULT_NOT_FOUND 0
+#define RESULT_REJECTED -1
+#define RESULT_NOT_INITIALIZED -1
+#define RESULT_ERROR -2
+
 
 
 class EspBinaryReader;
