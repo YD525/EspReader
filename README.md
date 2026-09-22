@@ -45,6 +45,16 @@ and ownership for handles and returned allocations. Existing exports remain avai
 Consumers must release handles with `C_DestroyInstance`, search arrays with `FreeSearchResults`, and dialogue link
 arrays with `C_FreeDialContext`. Borrowed record, subrecord, and string pointers must not be freed by the caller.
 
+Read, save, and modification results are signed 32-bit integers, not byte-sized booleans.
+A result of `1` indicates success; zero and negative results must not be treated as success.
+In particular, reading a missing file returns `0`, malformed input returns `-2`, and modifying
+a localized string ID returns `-1`. Consult the header for each operation's argument and result contract.
+
+`C_SubRecordData_GetDSDIndex` is separate from the filtered array index used for modification.
+Repeated message text uses its occurrence number, quest text uses its stage or objective number,
+and fields that do not need a DSD index return `-1`. The regression suite covers these distinctions,
+signed failure results, successful read status, and the presence of the canonical modification export.
+
 ## Releases
 
 Push a version tag matching `v*` to build the x64 library and create a GitHub Release. Each release contains
