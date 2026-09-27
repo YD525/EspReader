@@ -130,9 +130,16 @@ ESP_READER_API int32_t ESP_READER_CALL C_SetFilter(
     int32_t childCount) ESP_READER_NOEXCEPT;
 ESP_READER_API void ESP_READER_CALL C_ClearFilter(EspInstance* handle) ESP_READER_NOEXCEPT;
 
+/* Returns 1 on success, 0 when the file cannot be opened, -1 for invalid
+ * arguments, and -2 on parse or internal failure. Failed reads preserve the
+ * previously loaded document. The input path is borrowed UTF-16. */
 ESP_READER_API int32_t ESP_READER_CALL C_ReadEsp(
     EspInstance* handle,
     const wchar_t* espPath) ESP_READER_NOEXCEPT;
+/* Returns 1 on success, 0 when the output cannot be opened or the request is
+ * invalid or an exception reaches the ABI boundary, and -2 on write failure.
+ * The borrowed UTF-8 output path
+ * must differ from the loaded input path. Zero and negative values are failures. */
 ESP_READER_API int32_t ESP_READER_CALL C_SaveEsp(
     EspInstance* handle,
     const char* utf8Path) ESP_READER_NOEXCEPT;
@@ -167,6 +174,8 @@ ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetOccurrenceIndex(
     const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
 ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetIndex(
     const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
+/* Returns the format-specific DSD index, or -1 when no index is required.
+ * This is not the filtered array index returned by C_SubRecordData_GetIndex. */
 ESP_READER_API int32_t ESP_READER_CALL C_SubRecordData_GetDSDIndex(
     const SubRecordData* subRecord) ESP_READER_NOEXCEPT;
 ESP_READER_API const char* ESP_READER_CALL C_SubRecordData_GetSig(
@@ -198,6 +207,10 @@ ESP_READER_API int32_t ESP_READER_CALL C_ModifySubRecordByOffset(
     int32_t recordOffset,
     int32_t subOffset,
     const char* newUtf8Data) ESP_READER_NOEXCEPT;
+/* Updates a regular record selected by form ID, signatures, occurrence and
+ * filtered array index. Use C_ModifySubRecordByOffset with isCell=1 for CELL
+ * records. Returns 1 on success, 0 if not found, -1 for a localized string ID,
+ * or -2 for invalid replacement data. Signatures and UTF-8 text are borrowed. */
 ESP_READER_API int32_t ESP_READER_CALL C_ModifySubRecord(
     EspInstance* handle,
     uint32_t formId,

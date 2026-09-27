@@ -56,7 +56,7 @@ class EspInstance
 // ============================================================
 //  Version string
 // ============================================================
-static const std::string Version = "1.0.0.7";
+static const std::string Version = "1.0.0.8";
 
 // ============================================================
 //  Character cache helpers
@@ -1153,9 +1153,9 @@ ESP_READER_WRAP_CDECL(
     (handle, isCell, recordOffset, subOffset, newUtf8Data))
 ESP_READER_WRAP_CDECL(
         int32_t, C_ModifySubRecord, ModifySubRecordImpl, 0,
-        (EspInstance* handle, int isCell, uint32_t formId, const char* recordSig, const char* subSig,
+        (EspInstance* handle, uint32_t formId, const char* recordSig, const char* subSig,
             int32_t occurrenceIndex, int32_t globalIndex, const char* newUtf8Data),
-        (handle, isCell, formId, recordSig, subSig, occurrenceIndex, globalIndex, newUtf8Data))
+        (handle, 0, formId, recordSig, subSig, occurrenceIndex, globalIndex, newUtf8Data))
 ESP_READER_WRAP_VOID_CDECL(
     C_ClearCharacterTracker, ClearCharacterTrackerImpl, (EspInstance* handle), (handle))
 ESP_READER_WRAP_CDECL(
@@ -1275,7 +1275,7 @@ int32_t ESP_READER_CALL C_SetFilter(
 
 int32_t ESP_READER_CALL C_ReadEsp(EspInstance* handle, const wchar_t* espPath) noexcept
 {
-    return InvokeAbi<int32_t>(1, [&]()
+    return InvokeAbi<int32_t>(RESULT_ERROR, [&]()
     {
         if (handle == nullptr || espPath == nullptr)
         {
@@ -1283,7 +1283,9 @@ int32_t ESP_READER_CALL C_ReadEsp(EspInstance* handle, const wchar_t* espPath) n
             return -1;
         }
         const int32_t result = ReadEspImpl(handle, espPath);
-        if (result != 0)
+        if (result == RESULT_NOT_FOUND)
+            SetAbiError(ESP_READER_STATUS_IO_ERROR, "The plugin could not be opened.");
+        else if (result < 0)
             SetAbiError(ESP_READER_STATUS_PARSE_ERROR, "The plugin could not be opened or parsed.");
         return result;
     });
@@ -1301,7 +1303,7 @@ int32_t ESP_READER_CALL C_SaveEsp(EspInstance* handle, const char* utf8Path) noe
 
         const int32_t result = SaveEspImpl(handle, utf8Path);
 
-        if (result < 0)
+        if (result <= 0)
             SetAbiError(ESP_READER_STATUS_IO_ERROR, "The plugin could not be saved.");
 
         return result;
